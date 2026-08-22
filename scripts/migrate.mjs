@@ -1,14 +1,18 @@
+import { loadEnvLocal } from './load-env.mjs';
 import { readFile } from 'node:fs/promises';
 import { neon } from '@neondatabase/serverless';
 import { splitStatements } from './sql-split.mjs';
 
+loadEnvLocal();
+
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error('DATABASE_URL is not set. Try: node --env-file=.env.local scripts/migrate.mjs');
+  console.error('DATABASE_URL is not set. Add it to .env.local.');
   process.exit(1);
 }
 
 const sql = neon(connectionString);
+console.log(`-> ${new URL(connectionString).host}`);
 const schema = await readFile(new URL('../db/schema.sql', import.meta.url), 'utf8');
 const statements = splitStatements(schema);
 

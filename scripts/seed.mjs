@@ -1,13 +1,17 @@
+import { loadEnvLocal } from './load-env.mjs';
 import { neon } from '@neondatabase/serverless';
 import { JOBS, TARGETS, OUTREACH, PLAY, SCAN } from '../db/seed-data.mjs';
 
+loadEnvLocal();
+
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error('DATABASE_URL is not set. Try: node --env-file=.env.local scripts/seed.mjs');
+  console.error('DATABASE_URL is not set. Add it to .env.local.');
   process.exit(1);
 }
 
 const sql = neon(connectionString);
+console.log(`-> ${new URL(connectionString).host}`);
 
 // Kept in step with lib/slug.ts — the two runtimes can't share a module.
 function slugify(company, role) {
