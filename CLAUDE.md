@@ -7,5 +7,5 @@ Two things worth repeating here:
   running site never reads it, so editing it changes nothing.
 - Run `npm run typecheck && npm run build` before pushing. `main` auto-deploys.
 - The developer is the only user of this project. Any change that doesn't have the
-  potential to completely and irreversibly break the site can be merged directly to
+  potential to completely and irreversibly break the site should be merged directly to
   main without a PR.
