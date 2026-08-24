@@ -20,9 +20,10 @@ const STATUSES: [string, string][] = [
 const FILTERS = [
   'all', 'new', 'Berlin', 'Israel', 'Remote', 'Part-time', 'Freelance', 'Impact', 'Top fit',
 ] as const;
-type Filter = (typeof FILTERS)[number];
+const STAT_FILTERS = ['applied', 'talking', 'offer'] as const;
+type Filter = (typeof FILTERS)[number] | (typeof STAT_FILTERS)[number];
 
-const FILTER_LABELS: Record<Filter, string> = {
+const FILTER_LABELS: Record<(typeof FILTERS)[number], string> = {
   all: 'All',
   new: 'New this week',
   Berlin: 'Berlin',
@@ -100,6 +101,9 @@ export default function Hq({
       if (filter === 'Freelance' && job.employment !== 'Freelance' && job.employment !== 'Contract') return false;
       if (filter === 'Impact' && !job.impact) return false;
       if (filter === 'Top fit' && !job.top_fit) return false;
+      if (filter === 'applied' && job.status !== 'applied') return false;
+      if (filter === 'talking' && job.status !== 'talking') return false;
+      if (filter === 'offer' && job.status !== 'offer') return false;
       if (needle) {
         const hay = `${job.company} ${job.role} ${job.fit_note} ${job.my_notes} ${job.tags.join(' ')}`.toLowerCase();
         if (!hay.includes(needle)) return false;
@@ -109,13 +113,13 @@ export default function Hq({
   }, [jobs, filter, query, hideDone]);
 
   const count = (status: string) => jobs.filter((job) => job.status === status).length;
-  const stats: [number, string][] = [
-    [jobs.length, 'tracked'],
-    [jobs.filter((job) => job.fresh).length, 'new this week'],
-    [count('applied'), 'applied'],
-    [count('talking'), 'in conversation'],
-    [count('offer'), 'offers'],
-    [jobs.filter((job) => job.top_fit).length, 'top fit'],
+  const stats: [number, string, Filter][] = [
+    [jobs.length, 'tracked', 'all'],
+    [jobs.filter((job) => job.fresh).length, 'new this week', 'new'],
+    [count('applied'), 'applied', 'applied'],
+    [count('talking'), 'in conversation', 'talking'],
+    [count('offer'), 'offers', 'offer'],
+    [jobs.filter((job) => job.top_fit).length, 'top fit', 'Top fit'],
   ];
 
   return (
@@ -139,11 +143,18 @@ export default function Hq({
       </div>
 
       <div className="stats">
-        {stats.map(([value, label]) => (
-          <div className="stat" key={label}>
+        {stats.map(([value, label, statFilter]) => (
+          <button
+            key={label}
+            className={`stat${filter === statFilter ? ' on' : ''}`}
+            onClick={() => {
+              setTab('jobs');
+              setFilter((current) => (current === statFilter ? 'all' : statFilter));
+            }}
+          >
             <b>{value}</b>
             <span>{label}</span>
-          </div>
+          </button>
         ))}
       </div>
 
