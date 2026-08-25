@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Job } from '@/lib/jobs';
 
@@ -62,6 +62,7 @@ export default function Hq({
   const [query, setQuery] = useState('');
   const [hideDone, setHideDone] = useState(false);
   const [saving, setSaving] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
 
   async function patch(slug: string, changes: Partial<Job>) {
     const previous = jobs;
@@ -81,6 +82,29 @@ export default function Hq({
       setJobs(previous);
       setSaving(response?.status === 401 ? 'Session expired — reload' : 'Save failed');
     }
+  }
+
+  async function addJob(input: Record<string, unknown>): Promise<{ ok: true } | { ok: false; error: string }> {
+    const response = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    }).catch(() => null);
+
+    if (!response) return { ok: false, error: 'Network error — try again.' };
+    const data = await response.json().catch(() => ({}) as Record<string, unknown>);
+
+    if (response.ok) {
+      setJobs((current) => [data.job as Job, ...current]);
+      setSaving('Saved');
+      setTimeout(() => setSaving(''), 1400);
+      return { ok: true };
+    }
+    if (response.status === 409) {
+      return { ok: false, error: `Already tracked (as "${data.slug}") — edit that entry instead of adding a duplicate.` };
+    }
+    if (response.status === 401) return { ok: false, error: 'Session expired — reload.' };
+    return { ok: false, error: String(data.message ?? data.error ?? 'Could not add the job.') };
   }
 
   async function logOut() {
@@ -187,7 +211,12 @@ export default function Hq({
             <button className={`chip${hideDone ? ' on' : ''}`} onClick={() => setHideDone(!hideDone)}>
               Hide passed
             </button>
+            <button className="addbtn" onClick={() => setShowAdd((current) => !current)}>
+              {showAdd ? 'Cancel' : '+ Add job'}
+            </button>
           </div>
+
+          {showAdd && <AddJobForm onSubmit={addJob} onDone={() => setShowAdd(false)} />}
 
           {visible.length === 0 ? (
             <p style={{ color: 'var(--muted)', padding: '20px 0' }}>Nothing matches that filter.</p>
@@ -227,6 +256,159 @@ export default function Hq({
         Always confirm the role is still open on the company site before applying.
       </p>
     </div>
+  );
+}
+
+type AddJobResult = { ok: true } | { ok: false; error: string };
+
+const EMPTY_FORM = {
+  company: '',
+  role: '',
+  url: '',
+  city: '',
+  employment: '',
+  tags: '',
+  fit_note: '',
+  status: '' as Job['status'],
+  top_fit: false,
+  impact: false,
+  remote: false,
+  fresh: false,
+};
+
+function AddJobForm({
+  onSubmit,
+  onDone,
+}: {
+  onSubmit: (input: Record<string, unknown>) => Promise<AddJobResult>;
+  onDone: () => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const set = <K extends keyof typeof EMPTY_FORM>(key: K, value: (typeof EMPTY_FORM)[K]) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!form.company.trim() || !form.role.trim()) {
+      setError('Company and role are required.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const result = await onSubmit({
+      company: form.company.trim(),
+      role: form.role.trim(),
+      url: form.url.trim(),
+      city: form.city.trim(),
+      employment: form.employment,
+      tags: form.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      fit_note: form.fit_note.trim(),
+      status: form.status,
+      top_fit: form.top_fit,
+      impact: form.impact,
+      remote: form.remote,
+      fresh: form.fresh,
+    });
+    setBusy(false);
+    if (result.ok) onDone();
+    else setError(result.error);
+  }
+
+  return (
+    <form className="card addform" onSubmit={submit}>
+      <div className="addgrid">
+        <input
+          className="ain"
+          placeholder="Company *"
+          value={form.company}
+          onChange={(event) => set('company', event.target.value)}
+        />
+        <input
+          className="ain"
+          placeholder="Role *"
+          value={form.role}
+          onChange={(event) => set('role', event.target.value)}
+        />
+        <input
+          className="ain wide"
+          placeholder="Job URL"
+          value={form.url}
+          onChange={(event) => set('url', event.target.value)}
+        />
+        <input
+          className="ain"
+          list="city-options"
+          placeholder="City (Berlin / Israel / Remote)"
+          value={form.city}
+          onChange={(event) => set('city', event.target.value)}
+        />
+        <datalist id="city-options">
+          <option value="Berlin" />
+          <option value="Israel" />
+          <option value="Remote" />
+        </datalist>
+        <select className="ain" value={form.employment} onChange={(event) => set('employment', event.target.value)}>
+          <option value="">Employment…</option>
+          <option value="Full-time">Full-time</option>
+          <option value="Part-time">Part-time</option>
+          <option value="Freelance">Freelance</option>
+          <option value="Contract">Contract</option>
+        </select>
+        <select
+          className="ain"
+          value={form.status}
+          onChange={(event) => set('status', event.target.value as Job['status'])}
+        >
+          {STATUSES.map(([value, label]) => (
+            <option value={value} key={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input
+          className="ain wide"
+          placeholder="Tags, comma separated"
+          value={form.tags}
+          onChange={(event) => set('tags', event.target.value)}
+        />
+        <textarea
+          className="ain wide atext"
+          placeholder="Fit note — why this is worth his time"
+          value={form.fit_note}
+          onChange={(event) => set('fit_note', event.target.value)}
+        />
+      </div>
+      <div className="addflags">
+        <label>
+          <input type="checkbox" checked={form.top_fit} onChange={(event) => set('top_fit', event.target.checked)} />
+          Top fit
+        </label>
+        <label>
+          <input type="checkbox" checked={form.impact} onChange={(event) => set('impact', event.target.checked)} />
+          Impact
+        </label>
+        <label>
+          <input type="checkbox" checked={form.remote} onChange={(event) => set('remote', event.target.checked)} />
+          Remote
+        </label>
+        <label>
+          <input type="checkbox" checked={form.fresh} onChange={(event) => set('fresh', event.target.checked)} />
+          New this week
+        </label>
+      </div>
+      {error && <p className="adderr">{error}</p>}
+      <div className="addactions">
+        <button type="submit" className="addsave" disabled={busy}>
+          {busy ? 'Adding…' : 'Add job'}
+        </button>
+      </div>
+    </form>
   );
 }
 
