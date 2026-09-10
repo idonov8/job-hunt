@@ -43,6 +43,10 @@ export default function Hunter({
   const selected = jobs.filter(
     (j) => !j.status && state.selected.includes(j.slug),
   );
+  const queueMinutes = selected.reduce(
+    (sum, j) => sum + (j.form_index?.minutes ?? 0),
+    0,
+  );
   const stats: [number, string, string][] = [
     [jobs.length, 'Tracked', 'tracked'],
     [jobs.filter((j) => j.fresh).length, 'New this week', 'new'],
@@ -620,19 +624,7 @@ export default function Hunter({
                   }
                 />
               )}
-              <div className="queue-bar">
-                <span>
-                  {selected.length} {selected.length === 1 ? 'job' : 'jobs'} in
-                  your application queue
-                </span>
-                <button
-                  className="primary"
-                  disabled={busy || !selected.length}
-                  onClick={() => void act({ type: 'start' })}
-                >
-                  Start applications ↗
-                </button>
-              </div>
+
               <p className="result-count">
                 {visible.length} {visible.length === 1 ? 'job' : 'jobs'}
                 {tab === 'queue' ? ' in queue' : ''}
@@ -693,9 +685,8 @@ export default function Hunter({
                 <div className="session-orbit" aria-hidden="true">↗</div>
                 <h2>{selected.length ? 'You’ve got a plan.' : 'Make your first move.'}</h2>
                 <p>{selected.length ? `${selected.length} ${selected.length === 1 ? 'role' : 'roles'} queued. One at a time.` : 'Apply to roles that interest you, then give each application your full attention.'}</p>
-                <div className="sidebar-facts"><div><b>{selected.length}</b><span>in queue</span></div><div><b>100</b><span>XP / application</span></div></div>
+                <div className="sidebar-facts"><div><b>{selected.length}</b><span>in queue</span></div><div><b>~{queueMinutes}m</b><span>estimated time</span></div></div>
                 <button className="primary sidebar-wide" disabled={busy || !selected.length} onClick={() => void act({ type: 'start' })}>Start applications ↗</button>
-                <small>Quickest indexed forms first · 2 skips per session</small>
               </section>
               {session?.ended && <section className="sidebar-card"><span className="eyebrow">LAST SESSION</span><h3>{session.done.length * 100} XP earned</h3><p>{session.done.length} completed · {session.skipped.length} skipped</p><p>Skipped and unfinished roles stay in your application queue.</p></section>}
               <section className="sidebar-card"><span className="eyebrow">SMALL STEPS ADD UP</span><h3>{state.completed.length} applications logged</h3><p>{xp} total XP</p><div className="milestones">{[1, 5, 10].map(n => <span className={state.completed.length >= n ? 'earned' : ''} key={n}>{state.completed.length >= n ? '✦' : '◇'} {n === 1 ? 'First move' : `${n} applications`}</span>)}</div></section>
