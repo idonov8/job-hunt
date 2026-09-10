@@ -8,7 +8,10 @@ import { readFileSync } from 'node:fs';
  * container silently wins over the one in .env.local — which means migrations
  * and seeds can land in the wrong database. These scripts always mean the file.
  */
-export function loadEnvLocal(fileUrl = new URL('../.env.local', import.meta.url)) {
+export function loadEnvLocal(
+  fileUrl = process.env.JOB_HUNTER_ENV_FILE ||
+    new URL('../.env.local', import.meta.url),
+) {
   let contents;
   try {
     contents = readFileSync(fileUrl, 'utf8');

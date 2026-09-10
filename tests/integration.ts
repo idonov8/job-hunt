@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createSql } from '../scripts/database.mjs';
 import { loadEnvLocal } from '../scripts/load-env.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -90,26 +91,81 @@ async function main() {
     });
     assert.equal(login.status, 200);
     const cookie = login.headers.get('set-cookie')!.split(';')[0];
-    assert.equal((await fetch(base+'/api/hunter',{method:'POST',headers:{cookie,origin:'https://untrusted.example','content-type':'application/json'},body:JSON.stringify({type:'end'})})).status,401);
-    assert.equal((await fetch(base+'/api/hunter',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify({type:'end'})})).status,200);
-    assert.equal((await fetch(base, { headers: { cookie } })).status, 200);
-    const client = new Client({ name: 'job-hunter-check', version: '1.0' });
-    await client.connect(
-      new StdioClientTransport({
-        command: process.execPath,
-        args: ['--import', 'tsx', 'scripts/mcp.ts'],
-        cwd: process.cwd(),
-      }),
+    assert.equal(
+      (
+        await fetch(base + '/api/hunter', {
+          method: 'POST',
+          headers: {
+            cookie,
+            origin: 'https://untrusted.example',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ type: 'end' }),
+        })
+      ).status,
+      401,
     );
+    assert.equal(
+      (
+        await fetch(base + '/api/hunter', {
+          method: 'POST',
+          headers: { cookie, origin: base, 'content-type': 'application/json' },
+          body: JSON.stringify({ type: 'end' }),
+        })
+      ).status,
+      200,
+    );
+    const home = await fetch(base, { headers: { cookie } });
+    assert.equal(home.status, 200);
+    const html = await home.text();
+    for (const label of [
+      'Job Hunter',
+      'Application Queue',
+      'Set up automated job scan with your agent',
+      'In conversation',
+      'My notes',
+    ])
+      assert.ok(html.includes(label), label);
+    assert.ok(!html.includes('Classic tracker'));
+    const legacy = await fetch(base + '/tracker', { redirect: 'manual' });
+    assert.equal(legacy.status, 307);
+    assert.equal(legacy.headers.get('location'), '/');
+    const setup = await (await fetch(base + '/scan')).text();
+    assert.ok(setup.includes('Copy scan prompt'));
+    assert.ok(setup.includes('https://learn.chatgpt.com/docs/automations'));
+    assert.ok(setup.includes('schedule-recurring-tasks-in-claude-cowork'));
+    await api('/api/hunter', { type: 'start' });
+    assert.ok(
+      (await (await fetch(base, { headers: { cookie } })).text()).includes(
+        'focus-mode',
+      ),
+    );
+    await api('/api/hunter', { type: 'end' });
+    const client = new Client({ name: 'job-hunter-check', version: '1.0' });
+    const config = JSON.parse(
+      execFileSync(process.execPath, ['scripts/mcp-config.mjs'], {
+        encoding: 'utf8',
+      }),
+    ).mcpServers['job-hunter'];
+    await client.connect(new StdioClientTransport({ ...config, cwd: '/tmp', env: process.env.JOB_HUNTER_ENV_FILE ? {JOB_HUNTER_ENV_FILE: process.env.JOB_HUNTER_ENV_FILE} : undefined }));
     try {
-      assert.ok(
-        (await client.listTools()).tools.some((t) => t.name === 'add_job'),
+      assert.deepEqual(
+        (await client.listTools()).tools.map((t) => t.name).sort(),
+        ['add_job', 'index_form', 'list_jobs', 'record_scan', 'update_job'],
+      );
+      assert.equal(
+        (await client.callTool({ name: 'complete_application', arguments: {} }))
+          .isError,
+        true,
       );
       const result = await client.callTool({
         name: 'list_jobs',
         arguments: { q: 'Integration fixture' },
       });
       assert.ok(!result.isError);
+      const listed = JSON.parse((result.content as {text:string}[])[0].text);
+      assert.equal(listed.jobs.length,3);
+      assert.ok(listed.jobs.every((j:{slug:string}) => slugs.includes(j.slug)));
       assert.ok(
         (
           await client.getPrompt({

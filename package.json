@@ -13,7 +13,8 @@
     "mcp": "node --import tsx scripts/mcp.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "setup": "node scripts/setup.mjs",
-    "test:integration": "node --import tsx tests/integration.ts"
+    "test:integration": "node --import tsx tests/integration.ts",
+    "mcp:config": "node scripts/mcp-config.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

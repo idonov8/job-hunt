@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Job } from '@/lib/jobs';
 import {
   similarAnswers,
@@ -10,13 +11,21 @@ import {
 export default function Hunter({
   initialJobs,
   initialState,
+  lastScan,
 }: {
   initialJobs: Job[];
   initialState: HunterState;
+  lastScan: { scanned_on: string; sources: string } | null;
 }) {
   const [jobs, setJobs] = useState(initialJobs);
   const [state, setState] = useState(initialState);
-  const [tab, setTab] = useState('discover');
+  const router = useRouter();
+  const [tab, setTab] = useState('openings');
+  const [filter, setFilter] = useState('all');
+  const [city, setCity] = useState('');
+  const [employment, setEmployment] = useState('');
+  const [remote, setRemote] = useState(false);
+  const [impact, setImpact] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('fit');
   const [busy, setBusy] = useState(false);
@@ -31,17 +40,49 @@ export default function Hunter({
   const current = jobs.find((j) => j.slug === session?.queue[0]);
   const xp = state.completed.length * 100;
   const level = Math.floor(xp / 500) + 1;
-  const selected = jobs.filter((j) => state.selected.includes(j.slug));
+  const selected = jobs.filter(
+    (j) => !j.status && state.selected.includes(j.slug),
+  );
+  const stats: [number, string, string][] = [
+    [jobs.length, 'Tracked', 'tracked'],
+    [jobs.filter((j) => j.fresh).length, 'New this week', 'new'],
+    [jobs.filter((j) => j.status === 'applied').length, 'Applied', 'applied'],
+    [
+      jobs.filter((j) => j.status === 'talking').length,
+      'In conversation',
+      'talking',
+    ],
+    [jobs.filter((j) => j.status === 'offer').length, 'Offers', 'offer'],
+    [jobs.filter((j) => j.top_fit).length, 'Top fit', 'top_fit'],
+  ];
   const visible = jobs
     .filter((j) =>
-      tab === 'queue'
-        ? state.selected.includes(j.slug)
-        : tab === 'history'
-          ? Boolean(j.status)
-          : !j.status,
+      filter !== 'all'
+        ? true
+        : tab === 'queue'
+          ? !j.status && state.selected.includes(j.slug)
+          : tab === 'history'
+            ? Boolean(j.status)
+            : !j.status,
     )
     .filter((j) =>
-      `${j.company} ${j.role} ${j.fit_note} ${j.tags.join(' ')}`
+      filter === 'new'
+        ? j.fresh
+        : filter === 'top_fit'
+          ? j.top_fit
+          : ['applied', 'talking', 'offer', 'pass'].includes(filter)
+            ? j.status === filter
+            : true,
+    )
+    .filter(
+      (j) =>
+        (!city || j.city === city) &&
+        (!employment || j.employment === employment) &&
+        (!remote || j.remote || j.city === 'Remote') &&
+        (!impact || j.impact),
+    )
+    .filter((j) =>
+      `${j.company} ${j.role} ${j.fit_note} ${j.my_notes} ${j.tags.join(' ')}`
         .toLowerCase()
         .includes(query.toLowerCase()),
     )
@@ -108,7 +149,7 @@ export default function Hunter({
         'PATCH',
       );
       setJobs(jobs.map((j) => (j.slug === job.slug ? updated : j)));
-      if (changes.status === 'pass') {
+      if (changes.status) {
         const { state: next } = await request('/api/hunter', {
           type: 'remove',
           slug: job.slug,
@@ -137,12 +178,16 @@ export default function Hunter({
   return (
     <main className={`hunter ${active ? 'focus-mode' : ''}`}>
       <header className="hunter-header">
-        <a className="brand" href="/">
-          ↗{' '}
-          <span>
-            job hunter<span className="brand-dot">.</span>
-          </span>
-        </a>
+        <div>
+          <h1 className="brand">
+            <a href="/">Job Hunter</a>
+          </h1>
+          {!active && (
+            <p className="header-note">
+              Your jobs, applications, and next steps.
+            </p>
+          )}
+        </div>
         <div className="level">
           <span className="level-badge">{level}</span>
           <div>
@@ -164,9 +209,19 @@ export default function Hunter({
             </small>
           </div>
         </div>
-        <a className="quiet-link" href="/tracker">
-          Classic tracker ↗
-        </a>
+        <button
+          className="quiet-link"
+          disabled={busy}
+          onClick={() =>
+            void run(async () => {
+              await request('/api/auth/logout');
+              router.replace('/login');
+              router.refresh();
+            })
+          }
+        >
+          Log out
+        </button>
       </header>
       <div className="notice" role="status" aria-live="polite">
         {busy ? 'Saving…' : message}
@@ -394,357 +449,259 @@ export default function Hunter({
           )}
         </>
       ) : (
-        <div className="dashboard-grid">
-          <div className="main-column">
-            <div className="page-heading">
-              <div>
-                <span className="eyebrow">THE OPPORTUNITY BOARD</span>
-                <h1>
-                  Your next chapter
-                  <br />
-                  starts with one move.
-                </h1>
-                <p>Find your fit. Build your shortlist. Get in the zone.</p>
-              </div>
-              <button onClick={() => setAdding(!adding)}>
-                {adding ? 'Close' : '+ Add a role'}
-              </button>
-            </div>
-            <nav className="hunter-tabs" aria-label="Job views">
-              {[
-                ['discover', 'Discover'],
-                ['queue', `Shortlist · ${selected.length}`],
-                ['history', 'History'],
-                ['answers', 'Answers'],
-              ].map(([id, label]) => (
-                <button
-                  key={id}
-                  aria-current={tab === id ? 'page' : undefined}
-                  className={tab === id ? 'active' : ''}
-                  onClick={() => setTab(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
-            {adding && (
-              <form
-                className="job-add"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const form = e.currentTarget;
-                  const data = Object.fromEntries(new FormData(form));
-                  void run(async () => {
-                    const result = await request('/api/jobs', data);
-                    setJobs([result.job, ...jobs]);
-                    setAdding(false);
-                  });
+        <div className="board">
+          <div className="board-layout">
+            <div className="board-main">
+              <div className="hq-stats" aria-label="Application overview">
+            {stats.map(([value, label, key]) => (
+              <button
+                key={key}
+                className={filter === key ? 'on' : ''}
+                aria-pressed={filter === key}
+                onClick={() => {
+                  setTab(
+                    ['applied', 'talking', 'offer'].includes(key)
+                      ? 'history'
+                      : 'openings',
+                  );
+                  setFilter(filter === key ? 'all' : key);
+                  setCity('');
+                  setEmployment('');
+                  setRemote(false);
+                  setImpact(false);
+                  setQuery('');
                 }}
               >
-                <label>
-                  Company
-                  <input name="company" required maxLength={200} />
-                </label>
-                <label>
-                  Role
-                  <input name="role" required maxLength={300} />
-                </label>
-                <label>
-                  Application URL
-                  <input name="application_url" type="url" required />
-                </label>
-                <label>
-                  Location
-                  <input name="city" />
-                </label>
-                <button disabled={busy} className="primary">
-                  Add & index form
-                </button>
-              </form>
-            )}
-            {tab === 'answers' ? (
-              <div>
-                {state.answers.length ? (
-                  state.answers.map((a, i) => (
-                    <article className="opportunity" key={i}>
-                      <span className="eyebrow">
-                        {a.company} ·{' '}
-                        {new Date(a.saved_at).toLocaleDateString()}
-                      </span>
-                      <h2>{a.question}</h2>
-                      <p className="answer-text">{a.answer}</p>
-                      <button
-                        onClick={() =>
-                          void run(async () => {
-                            await navigator.clipboard.writeText(a.answer);
-                            setMessage('Answer copied');
-                          })
-                        }
-                      >
-                        Copy answer
-                      </button>
-                    </article>
-                  ))
-                ) : (
-                  <div className="empty">
-                    <h2>Your experience is reusable.</h2>
-                    <p>
-                      Save answers during a focus session to build your library.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="board-controls">
-                  <input
-                    aria-label="Search jobs"
-                    placeholder="Search roles, companies, skills…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                  <select
-                    aria-label="Sort jobs"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value)}
-                  >
-                    <option value="fit">Best fit first</option>
-                    <option value="time">Quickest applications</option>
-                  </select>
-                </div>
-                <div className="result-count">
-                  {visible.length} opportunities{' '}
-                  {tab === 'queue' ? 'in your shortlist' : ''}
-                </div>
-                {visible.map((job) => (
-                  <article
-                    className={`opportunity ${state.selected.includes(job.slug) ? 'is-selected' : ''}`}
-                    key={job.slug}
-                  >
-                    <div className="opportunity-top">
-                      <div className="company-mark" aria-hidden="true">
-                        {job.company.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <span className="company-name">{job.company}</span>
-                        <h2>{job.role}</h2>
-                      </div>
-                      <span className="time-tag">
-                        {job.form_index?.minutes
-                          ? `~${job.form_index.minutes} min`
-                          : 'Time unknown'}
-                      </span>
-                    </div>
-                    <div className="job-tags">
-                      {job.city && <span>{job.city}</span>}
-                      {job.remote && <span>Remote</span>}
-                      {job.employment && <span>{job.employment}</span>}
-                      {job.top_fit && (
-                        <span className="fit-tag">✦ Strong fit</span>
-                      )}
-                      {job.fresh && <span>New</span>}
-                    </div>
-                    <p>
-                      {job.fit_note ||
-                        'Add a fit note through your scan assistant or the classic tracker.'}
-                    </p>
-                    <details>
-                      <summary>
-                        {job.form_index
-                          ? `${job.form_index.fields.length} indexed fields · ${job.form_index.fields.filter((f) => f.open).length} open questions`
-                          : 'Application details'}
-                      </summary>
-                      <p>
-                        {job.form_index?.note ||
-                          'Index the form to estimate the work involved.'}
-                      </p>
-                      <ul>
-                        {job.form_index?.fields.map((f) => (
-                          <li key={f.key}>
-                            {f.label} · {f.kind}
-                            {f.required ? ' · required' : ''}
-                            {f.options.length
-                              ? ` (${f.options.join(', ')})`
-                              : ''}
-                          </li>
-                        ))}
-                      </ul>
-                      <button
-                        disabled={busy || !(job.application_url || job.url)}
-                        onClick={() => void index(job)}
-                      >
-                        Re-index form
-                      </button>
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          void patch(job, {
-                            application_url: String(
-                              new FormData(e.currentTarget).get('url'),
-                            ),
-                          });
-                        }}
-                      >
-                        <label>
-                          Direct application URL
-                          <input
-                            name="url"
-                            type="url"
-                            defaultValue={job.application_url || job.url || ''}
-                            required
-                          />
-                        </label>
-                        <button disabled={busy}>Save & index</button>
-                      </form>
-                    </details>
-                    <footer>
-                      <span>
-                        {job.status
-                          ? job.status
-                          : job.tags.slice(0, 3).join(' · ') ||
-                            'Ready to explore'}
-                      </span>
-                      <div>
-                        {job.status ? (
-                          <button
-                            disabled={
-                              busy ||
-                              state.completed.some((c) => c.slug === job.slug)
-                            }
-                            onClick={() => void patch(job, { status: '' })}
-                          >
-                            {state.completed.some((c) => c.slug === job.slug)
-                              ? 'XP earned'
-                              : 'Reopen'}
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              disabled={busy}
-                              onClick={() =>
-                                void patch(job, { status: 'pass' })
-                              }
-                            >
-                              Discard
-                            </button>
-                            <button
-                              className={
-                                state.selected.includes(job.slug)
-                                  ? 'selected-button'
-                                  : 'primary'
-                              }
-                              disabled={
-                                busy ||
-                                state.completed.some((c) => c.slug === job.slug)
-                              }
-                              onClick={() =>
-                                void act({
-                                  type: state.selected.includes(job.slug)
-                                    ? 'remove'
-                                    : 'select',
-                                  slug: job.slug,
-                                })
-                              }
-                            >
-                              {state.selected.includes(job.slug)
-                                ? '✓ Shortlisted'
-                                : '+ Shortlist'}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </footer>
-                  </article>
-                ))}
-                {!visible.length && (
-                  <div className="empty">
-                    <h2>
-                      {tab === 'discover'
-                        ? 'A fresh start.'
-                        : 'Nothing here yet.'}
-                    </h2>
-                    <p>
-                      {tab === 'discover'
-                        ? 'Add a role above, or connect your assistant and run a job scan.'
-                        : 'Your next move will show up here.'}
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          <aside className="mission-sidebar">
-            <section className="session-card">
-              <span className="eyebrow">YOUR NEXT SESSION</span>
-              <div className="orbit" aria-hidden="true">
-                <span>↗</span>
-              </div>
-              <h2>
-                {selected.length
-                  ? 'You’ve got a plan.'
-                  : 'Make your first move.'}
-              </h2>
-              <p>
-                {selected.length
-                  ? `${selected.length} roles shortlisted. One at a time. You’ve got this.`
-                  : 'Shortlist roles that interest you, then give each application your full attention.'}
-              </p>
-              <div className="session-facts">
-                <div>
-                  <b>{selected.length}</b>
-                  <span>in queue</span>
-                </div>
-                <div>
-                  <b>100</b>
-                  <span>XP / application</span>
-                </div>
-              </div>
-              <button
-                className="primary"
-                disabled={busy || !selected.length}
-                onClick={() => void act({ type: 'start' })}
-              >
-                Enter focus mode ↗
+                <b>{value}</b>
+                <span>{label}</span>
               </button>
-              <small>Quickest indexed forms first · 2 skips per session</small>
-            </section>
-            {session?.ended && (
-              <section className="session-recap">
-                <span className="eyebrow">LAST SESSION</span>
-                <h3>{session.done.length * 100} XP earned</h3>
-                <p>
-                  {session.done.length} completed · {session.skipped.length}{' '}
-                  skipped
-                </p>
-                <p>Skipped and unfinished roles stay in your shortlist.</p>
-              </section>
-            )}
-            <section className="progress-card">
-              <span className="eyebrow">SMALL STEPS ADD UP</span>
-              <h3>{state.completed.length} applications logged</h3>
-              <p>{xp} total XP</p>
-              <div className="milestones">
-                {[1, 5, 10].map((n) => (
-                  <span
-                    className={state.completed.length >= n ? 'earned' : ''}
-                    key={n}
-                  >
-                    {state.completed.length >= n ? '✦' : '◇'}{' '}
-                    {n === 1 ? 'First move' : `${n} applications`}
-                  </span>
-                ))}
+            ))}
               </div>
-            </section>
-            <section className="assistant-card">
-              <span className="eyebrow">LET YOUR ASSISTANT SCOUT</span>
-              <h3>Fresh roles. Your criteria.</h3>
-              <p>
-                Use your existing AI subscription to curate jobs through Job
-                Hunter’s MCP.
+              <a className="scan-setup-link" href="/scan">
+                Set up automated job scan with your agent
+              </a>
+              <nav className="hunter-tabs" aria-label="Job views">
+            {[
+              ['openings', 'Openings'],
+              ['queue', `Application Queue · ${selected.length}`],
+              ['history', 'History'],
+              ['answers', 'Answers'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                aria-current={tab === id ? 'page' : undefined}
+                className={tab === id ? 'active' : ''}
+                onClick={() => {
+                  setTab(id);
+                  setFilter('all');
+                }}
+              >
+                {label}
+              </button>
+            ))}
+              </nav>
+              {tab === 'answers' ? (
+            <div>
+              {state.answers.length ? (
+                state.answers.map((a, i) => (
+                  <article className="opportunity" key={i}>
+                    <span className="eyebrow">
+                      {a.company} · {new Date(a.saved_at).toLocaleDateString()}
+                    </span>
+                    <h2>{a.question}</h2>
+                    <p className="answer-text">{a.answer}</p>
+                    <button
+                      onClick={() =>
+                        void run(async () => {
+                          await navigator.clipboard.writeText(a.answer);
+                          setMessage('Answer copied');
+                        })
+                      }
+                    >
+                      Copy answer
+                    </button>
+                  </article>
+                ))
+              ) : (
+                <div className="empty">
+                  <h2>Your answer library</h2>
+                  <p>
+                    Save answers during an application session to reuse them
+                    next time.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="board-controls">
+                <input
+                  aria-label="Search jobs"
+                  placeholder="Search company, role, notes, skills…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <select
+                  aria-label="Sort jobs"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value)}
+                >
+                  <option value="fit">Best fit first</option>
+                  <option value="time">Quickest applications</option>
+                </select>
+                <button onClick={() => setAdding(!adding)}>
+                  {adding ? 'Cancel' : '+ Add job'}
+                </button>
+              </div>
+              <div className="board-filters">
+                <select
+                  aria-label="Filter by location"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                >
+                  <option value="">All locations</option>
+                  {Array.from(
+                    new Set(
+                      jobs
+                        .map((j) => j.city)
+                        .filter((c): c is string => Boolean(c)),
+                    ),
+                  )
+                    .sort()
+                    .map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                </select>
+                <select
+                  aria-label="Filter by employment"
+                  value={employment}
+                  onChange={(e) => setEmployment(e.target.value)}
+                >
+                  <option value="">All employment</option>
+                  {['Full-time', 'Part-time', 'Freelance', 'Contract'].map(
+                    (t) => (
+                      <option key={t}>{t}</option>
+                    ),
+                  )}
+                </select>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={remote}
+                    onChange={(e) => setRemote(e.target.checked)}
+                  />
+                  Remote
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={impact}
+                    onChange={(e) => setImpact(e.target.checked)}
+                  />
+                  Impact
+                </label>
+              </div>
+              {filter !== 'all' && (
+                <p className="active-filter">
+                  Showing{' '}
+                  {stats.find(([, , key]) => key === filter)?.[1].toLowerCase()}{' '}
+                  <button onClick={() => setFilter('all')}>Clear filter</button>
+                </p>
+              )}
+              {adding && (
+                <JobForm
+                  busy={busy}
+                  onSave={(data) =>
+                    run(async () => {
+                      const result = await request('/api/jobs', data);
+                      setJobs([result.job, ...jobs]);
+                      setAdding(false);
+                    })
+                  }
+                />
+              )}
+              <div className="queue-bar">
+                <span>
+                  {selected.length} {selected.length === 1 ? 'job' : 'jobs'} in
+                  your application queue
+                </span>
+                <button
+                  className="primary"
+                  disabled={busy || !selected.length}
+                  onClick={() => void act({ type: 'start' })}
+                >
+                  Start applications ↗
+                </button>
+              </div>
+              <p className="result-count">
+                {visible.length} {visible.length === 1 ? 'job' : 'jobs'}
+                {tab === 'queue' ? ' in queue' : ''}
               </p>
-              <a href="/scan">Set up your scan ↗</a>
-            </section>
-          </aside>
+              {visible.map((job) => (
+                <JobCard
+                  key={job.slug}
+                  job={job}
+                  busy={busy}
+                  queued={state.selected.includes(job.slug)}
+                  completed={state.completed.some((c) => c.slug === job.slug)}
+                  onPatch={(changes) => patch(job, changes)}
+                  onIndex={() => index(job)}
+                  onApply={() =>
+                    act({
+                      type: state.selected.includes(job.slug)
+                        ? 'remove'
+                        : 'select',
+                      slug: job.slug,
+                    })
+                  }
+                />
+              ))}
+              {!visible.length && (
+                <div className="empty">
+                  <h2>
+                    {query || filter !== 'all'
+                      ? 'No matching jobs'
+                      : tab === 'queue'
+                        ? 'Your application queue is empty'
+                        : 'No jobs here yet'}
+                  </h2>
+                  <p>
+                    {tab === 'queue'
+                      ? 'Choose Apply on an opening to add it to your queue.'
+                      : 'Add a job or ask your agent to run a scan.'}
+                  </p>
+                </div>
+              )}
+            </>
+              )}
+              {session?.ended && (
+                <p className="session-recap">
+                  Last session: {session.done.length} completed ·{' '}
+                  {session.done.length * 100} XP · {session.skipped.length} skipped.
+                  Skipped and unfinished jobs stay in your application queue.
+                </p>
+              )}
+              <p className="foot">
+                {lastScan
+                  ? `Last scan ${lastScan.scanned_on}${lastScan.sources ? ` · ${lastScan.sources}` : ''}`
+                  : 'No scan recorded yet.'}
+              </p>
+            </div>
+            <aside className="overview-sidebar">
+              <section className="sidebar-card session-card-light">
+                <span className="eyebrow">YOUR NEXT SESSION</span>
+                <div className="session-orbit" aria-hidden="true">↗</div>
+                <h2>{selected.length ? 'You’ve got a plan.' : 'Make your first move.'}</h2>
+                <p>{selected.length ? `${selected.length} ${selected.length === 1 ? 'role' : 'roles'} queued. One at a time.` : 'Apply to roles that interest you, then give each application your full attention.'}</p>
+                <div className="sidebar-facts"><div><b>{selected.length}</b><span>in queue</span></div><div><b>100</b><span>XP / application</span></div></div>
+                <button className="primary sidebar-wide" disabled={busy || !selected.length} onClick={() => void act({ type: 'start' })}>Start applications ↗</button>
+                <small>Quickest indexed forms first · 2 skips per session</small>
+              </section>
+              {session?.ended && <section className="sidebar-card"><span className="eyebrow">LAST SESSION</span><h3>{session.done.length * 100} XP earned</h3><p>{session.done.length} completed · {session.skipped.length} skipped</p><p>Skipped and unfinished roles stay in your application queue.</p></section>}
+              <section className="sidebar-card"><span className="eyebrow">SMALL STEPS ADD UP</span><h3>{state.completed.length} applications logged</h3><p>{xp} total XP</p><div className="milestones">{[1, 5, 10].map(n => <span className={state.completed.length >= n ? 'earned' : ''} key={n}>{state.completed.length >= n ? '✦' : '◇'} {n === 1 ? 'First move' : `${n} applications`}</span>)}</div></section>
+              <section className="sidebar-card assistant-card-light"><span className="eyebrow">LET YOUR AGENT SCOUT</span><h3>Fresh roles. Your criteria.</h3><p>Use your existing subscription to keep the openings board fresh.</p><a href="/scan">Set up automated job scan ↗</a></section>
+            </aside>
+          </div>
         </div>
       )}
     </main>
@@ -770,5 +727,289 @@ function Suggestions({
         </details>
       ))}
     </>
+  );
+}
+
+const JOB_STATUSES = [
+  ['', 'Not started'],
+  ['applied', 'Applied'],
+  ['talking', 'In conversation'],
+  ['offer', 'Offer'],
+  ['pass', 'Passed / closed'],
+];
+function JobCard({
+  job,
+  busy,
+  queued,
+  completed,
+  onPatch,
+  onIndex,
+  onApply,
+}: {
+  job: Job;
+  busy: boolean;
+  queued: boolean;
+  completed: boolean;
+  onPatch: (changes: Partial<Job>) => Promise<void>;
+  onIndex: () => Promise<void>;
+  onApply: () => Promise<void>;
+}) {
+  const [note, setNote] = useState(job.my_notes);
+  return (
+    <article
+      className={`opportunity ${queued && !job.status ? 'is-selected' : ''} ${job.status === 'pass' ? 'passed' : ''}`}
+    >
+      <div className="job-summary">
+        <div>
+          <h2>
+            {job.url || job.application_url ? (
+              <a
+                href={(job.url || job.application_url)!}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {job.role}
+              </a>
+            ) : (
+              job.role
+            )}
+          </h2>
+          <p className="company-name">{job.company}</p>
+          <p>{job.fit_note || 'No fit note yet.'}</p>
+          <div className="job-tags">
+            {job.city && <span className="tag city">{job.city}</span>}
+            {job.employment && (
+              <span className="tag type">{job.employment}</span>
+            )}
+            {job.remote && <span className="tag">Remote</span>}
+            {job.fresh && <span className="tag new">New</span>}
+            {job.impact && <span className="tag impact">Impact</span>}
+            {job.top_fit && <span className="tag hot">Top fit</span>}
+            {job.tags.map((t) => (
+              <span className="tag" key={t}>
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="job-actions">
+          <span className="time-tag">
+            {job.form_index?.minutes
+              ? `~${job.form_index.minutes} min`
+              : 'Time unknown'}
+          </span>
+          <label>
+            Status
+            <select
+              aria-label={`Status for ${job.company} ${job.role}`}
+              value={job.status}
+              disabled={busy}
+              onChange={(e) =>
+                void onPatch({ status: e.target.value as Job['status'] })
+              }
+            >
+              {JOB_STATUSES.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="job-buttons">
+            {!job.status && (
+              <>
+                <button
+                  disabled={busy}
+                  onClick={() => void onPatch({ status: 'pass' })}
+                >
+                  Discard
+                </button>
+                <button
+                  className={queued ? 'selected-button' : 'primary'}
+                  disabled={busy || completed}
+                  onClick={() => void onApply()}
+                >
+                  {queued
+                    ? 'Remove from queue'
+                    : completed
+                      ? 'XP earned'
+                      : 'Apply'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <form
+        className="job-notes"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onPatch({ my_notes: note });
+        }}
+      >
+        <label>
+          My notes
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Notes, follow-ups, things to ask…"
+          />
+        </label>
+        <button disabled={busy || note === job.my_notes}>Save notes</button>
+      </form>
+      <details className="job-detail">
+        <summary>
+          Company & application details
+          {job.form_index
+            ? ` · ${job.form_index.fields.length} fields · ${job.form_index.fields.filter((f) => f.open).length} open questions`
+            : ''}
+        </summary>
+        <div className="company-context">
+          <section>
+            <h3>About the company</h3>
+            <p>{job.company_summary || 'No company summary yet.'}</p>
+          </section>
+          <section>
+            <h3>Your connection</h3>
+            <p>{job.connection_note || 'No connection recorded.'}</p>
+          </section>
+        </div>
+        {job.source && <p>Source: {job.source}</p>}
+        <p>
+          First seen {job.first_seen} · Last seen {job.last_seen}
+        </p>
+        <p>
+          {job.form_index?.note ||
+            'Index the application form to estimate the time involved.'}
+        </p>
+        <ul>
+          {job.form_index?.fields.map((f) => (
+            <li key={f.key}>
+              {f.label} · {f.kind}
+              {f.required ? ' · required' : ''}
+              {f.options.length ? ` (${f.options.join(', ')})` : ''}
+            </li>
+          ))}
+        </ul>
+        <button
+          disabled={busy || !(job.application_url || job.url)}
+          onClick={() => void onIndex()}
+        >
+          Re-index form
+        </button>
+        <details className="edit-job">
+          <summary>Edit job information</summary>
+          <JobForm job={job} busy={busy} onSave={onPatch} />
+        </details>
+      </details>
+    </article>
+  );
+}
+function JobForm({
+  job,
+  busy,
+  onSave,
+}: {
+  job?: Job;
+  busy: boolean;
+  onSave: (data: Partial<Job>) => Promise<void>;
+}) {
+  return (
+    <form
+      className="job-add"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        void onSave({
+          ...Object.fromEntries(data),
+          tags: String(data.get('tags') || '')
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean),
+          remote: data.has('remote'),
+          fresh: data.has('fresh'),
+          top_fit: data.has('top_fit'),
+          impact: data.has('impact'),
+        } as Partial<Job>);
+      }}
+    >
+      <label>
+        Company
+        <input
+          name="company"
+          defaultValue={job?.company}
+          required
+          maxLength={200}
+        />
+      </label>
+      <label>
+        Role
+        <input name="role" defaultValue={job?.role} required maxLength={300} />
+      </label>
+      <label>
+        Posting URL
+        <input name="url" type="url" defaultValue={job?.url || ''} />
+      </label>
+      <label>
+        Direct application URL
+        <input
+          name="application_url"
+          type="url"
+          defaultValue={job?.application_url || ''}
+        />
+      </label>
+      <label>
+        Location
+        <input name="city" defaultValue={job?.city || ''} />
+      </label>
+      <label>
+        Employment
+        <select name="employment" defaultValue={job?.employment || ''}>
+          {['', 'Full-time', 'Part-time', 'Freelance', 'Contract'].map(
+            (value) => (
+              <option key={value} value={value}>
+                {value || 'Not specified'}
+              </option>
+            ),
+          )}
+        </select>
+      </label>
+      <label>
+        Tags, comma separated
+        <input name="tags" defaultValue={job?.tags.join(', ')} />
+      </label>
+      <label>
+        Fit note
+        <textarea name="fit_note" defaultValue={job?.fit_note} />
+      </label>
+      <label>
+        Company summary
+        <textarea name="company_summary" defaultValue={job?.company_summary} />
+      </label>
+      <label>
+        Your connection
+        <textarea name="connection_note" defaultValue={job?.connection_note} />
+      </label>
+      <div className="addflags">
+        {[
+          ['remote', 'Remote'],
+          ['fresh', 'New this week'],
+          ['top_fit', 'Top fit'],
+          ['impact', 'Impact'],
+        ].map(([name, label]) => (
+          <label key={name}>
+            <input
+              type="checkbox"
+              name={name}
+              defaultChecked={Boolean(job?.[name as keyof Job])}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      <button disabled={busy} className="primary">
+        {job ? 'Save job' : 'Add job'}
+      </button>
+    </form>
   );
 }

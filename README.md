@@ -1,6 +1,6 @@
 # Job Hunter
 
-A local-first, gamified job search workspace built on Job Hunt HQ. Curate roles with your existing AI subscription through MCP, shortlist the interesting ones, then work through focused application sessions.
+A local-first, gamified job search workspace built on Job Hunt HQ. Curate roles with your existing AI subscription through MCP, queue the interesting ones, then work through focused application sessions.
 
 ## Run locally
 
@@ -25,19 +25,19 @@ New installations start empty. Add a role in the UI or connect your assistant.
 
 ## The workflow
 
-- **Discover:** search and rank by fit or estimated application time. Shortlist or discard roles.
+- **Openings:** the light HQ overview with counters, filters, status controls, notes, and indexed application details. Choose **Apply** to add a job to **Application Queue**.
 - **Focus:** one bright application iframe in a dark workspace, with company facts, your fit, connections, and relevant prior answers. Use the external link when embedding or sign-in is blocked.
 - **Complete:** submit on the employer's site, then confirm and log the application. Earn 100 XP once per role; level up every 500 XP. Job Hunter never submits to an employer on your behalf.
-- **Skip:** two skips per session. Skipped and unfinished roles stay shortlisted. You can always end a session.
+- **Skip:** two skips per session. Skipped and unfinished roles stay in Application Queue. You can always end a session.
 - **Reuse:** record answers you actually submitted. They save with the application, question, company, and timestamp. Similarity uses lexical overlap, without embeddings or model calls. Review before reusing. Unsaved answer notes are lost on reload; the application queue and earned XP survive reloads.
 
-The original jobs, notes, filters, direct targets, outreach, and playbook remain available at `/tracker`. The original API remains compatible. Schema additions are idempotent and do not rewrite existing job data.
+There is one Job Hunter interface. `/tracker` redirects to `/`. Tabs are Openings, Application Queue, History, and Answers; direct-target, outreach, and playbook tabs are removed. Legacy collection data and API routes remain intact.
 
 ## Connect your assistant through MCP
 
 The app exposes a **local stdio MCP server**. Use a compatible assistant that supports local MCP servers (and your existing subscription). The assistant, its web/email connectors, and any scheduling run outside Job Hunter.
 
-In your assistant's MCP configuration, replacing both absolute paths:
+Run `npm run mcp:config` to print ready-to-paste local MCP settings with the correct Node executable and absolute paths. No token is printed. Add the result to your agent's local MCP configuration. Its shape is:
 
 ```json
 {
@@ -57,7 +57,7 @@ The script resolves `.env.local` relative to the checkout, so it also works when
 
 Tools: `list_jobs`, `add_job`, `update_job`, `index_form`, `record_scan`.
 Prompt: `job_scan`, with `preferences` and optional `cadence` (`daily` / `weekly`).
-Open `/scan` to enter your interests and copy a personalized prompt into your existing automation. The complete prompt source is [lib/scan-prompt.ts](lib/scan-prompt.ts).
+Open `/scan` for a gentle connection walkthrough, copyable connection instructions, and a shorter personalized scan prompt. Run it once before scheduling it. The page links to [ChatGPT scheduled tasks](https://learn.chatgpt.com/docs/automations) and [Claude recurring tasks](https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork). Local MCP scans require the app and a compatible desktop agent to remain running; a cloud-only routine cannot launch this stdio server directly. The complete prompt source is [lib/scan-prompt.ts](lib/scan-prompt.ts).
 
 The prompt requests verified company/role/posting/application URLs, location, employment, remote policy, tags, fit notes, company facts, real connections, and dated sources. Email status updates require a separately connected and authorized email reader. It preserves user notes/history and flags ambiguous matches. MCP has no employer submission, email sending, answer-library read, or XP-awarding tool.
 
@@ -71,6 +71,34 @@ Forms are indexed on job insertion, application/posting URL changes, or explicit
 - Estimates: one minute overhead, ~15 seconds per short field, ~12–15 seconds per choice, one minute per file, and 2.5 minutes per open question. These are heuristics, not observed user timings.
 
 **Coverage limit:** static HTML and public Greenhouse questions do not reveal all JavaScript-only, conditional, consent, demographic, login, or multi-step controls. Results are labeled **partial**, or **unknown** when no controls are found; unknown jobs sort last. Full browser rendering, CAPTCHA bypass, and automatic form filling are not included. No LLM invents question counts or estimates.
+
+## Database migration: what you need to run
+
+**Already running the previous Job Hunter MVP?** This UI update requires no new migration. The local database created in that setup already has the needed schema.
+
+**Upgrading the original Job Hunt HQ / Neon database?** In a checkout configured for that database, run:
+
+```bash
+npm ci
+npm run db:migrate
+npm run build
+```
+
+The script reads `DATABASE_URL` from that checkout's `.env.local` **in preference to shell variables**. Confirm the file targets your existing Neon database and omit `DATABASE_DRIVER=pg` there (or set it to `neon`). The preview checkout may instead point to a separate local Docker database. Migrating the preview does not migrate Neon. To keep separate settings without changing `.env.local`, use `JOB_HUNTER_ENV_FILE=/absolute/path/neon.env npm run db:migrate`; that explicit file takes precedence. The same override works for the MCP process.
+
+The additions are:
+
+| Database object | Purpose |
+| --- | --- |
+| `jobs.application_url` (nullable text) | Direct application form URL |
+| `jobs.company_summary` (text, default empty) | Company context |
+| `jobs.connection_note` (text, default empty) | Your connection to the role/company |
+| `jobs.form_index` (nullable JSONB) | Scraped questions, field types, and time estimates |
+| `hunter_state` (one row, JSONB data + version) | Application queue, sessions, XP ledger, saved answers |
+
+The command is safe to rerun. Existing jobs, statuses, notes, and legacy tables are retained. Existing rows get empty/null new fields; use `index_form` and your next agent scan to fill them. Historical applications still count in the overview; XP starts with applications logged through focus mode. Do **not** seed your existing database to perform this upgrade.
+
+Apply the migration before deploying the updated app. Keep your existing `APP_PASSWORD`, `SESSION_SECRET`, and `AGENT_TOKEN`. `AGENT_TOKEN` is a single fixed bearer token stored in the environment; no per-user setup or OAuth is needed for this personal installation.
 
 ## Existing hosted installation
 
@@ -95,7 +123,7 @@ npm test
 npm run typecheck
 npm run build
 # With the app running against a fresh, disposable LOCAL database:
-npm run test:integration
+JOB_HUNTER_ENV_FILE=/absolute/path/test.env npm run test:integration
 ```
 
-The integration check creates temporary jobs and exercises authentication, job CRUD, concurrent completion, answer persistence, skips, server rendering, and a real MCP client handshake/tool/prompt call. It cleans up its fixtures; do not run it on your working job database.
+Point the test settings at an isolated local database and a separate app instance using it; do not point them at your preview data. The integration check creates temporary jobs and exercises authentication, job CRUD, concurrent completion, answer persistence, skips, server rendering, and a real MCP client handshake/tool/prompt call. It cleans up its fixtures; do not run it on your working job database.

@@ -108,7 +108,7 @@ export async function GET(request: Request) {
   return Response.json({
     openapi: '3.1.0',
     info: {
-      title: 'Job Hunt HQ API',
+      title: 'Job Hunter API',
       version: '1.0.0',
       description:
         "Ido's job-hunt tracker. Every endpoint needs `Authorization: Bearer <AGENT_TOKEN>` " +
