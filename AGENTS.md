@@ -142,3 +142,24 @@ re-runnable), then add the field to the whitelist in `lib/jobs.ts` and to
 `/api/openapi.json`. Push to `main` and Vercel deploys it.
 
 Before pushing: `npm run typecheck && npm run build`.
+
+## Job Hunter MVP
+
+The default `/` route is the gamified board; the original UI is at `/tracker`.
+See README for local Postgres setup and the stdio MCP bridge. Do not assume a
+production deployment or access a production database to validate code changes.
+
+New writable job fields: `application_url` (direct form), `company_summary`,
+`connection_note`. Form indexing runs programmatically on insert and URL changes.
+`form_index` is read-only; never guess or overwrite its question counts using an LLM.
+Re-index with `POST /api/jobs/{slug}/index`.
+
+`lib/hunter-model.ts` owns session transitions and lexical answer matching.
+`lib/hunter.ts` commits the session/XP ledger and application status atomically.
+`/api/hunter` is the authenticated personal state API. XP is a one-time completion
+ledger, not a counter derived from mutable job statuses. Email updates should use
+the existing job status API; never fabricate user-confirmed completions.
+
+`/scan` and the MCP `job_scan` prompt let the user personalize the daily/weekly
+scan. The assistant must verify facts and preserve notes, history, and user choices.
+Run `npm test` in addition to the existing typecheck/build before pushing.

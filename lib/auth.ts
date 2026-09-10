@@ -80,6 +80,13 @@ export async function isAuthorized(request: Request): Promise<boolean> {
     const token = process.env.AGENT_TOKEN;
     if (token && safeEqual(header.slice(7).trim(), token)) return true;
   }
+  const origin = request.headers.get('origin');
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && origin) {
+    // Next may normalize request.url to localhost; browser Host retains the public host.
+    try {
+      if (new URL(origin).host !== request.headers.get('host')) return false;
+    } catch { return false; }
+  }
   return isValidSession(readCookie(request, SESSION_COOKIE));
 }
 

@@ -1,61 +1,101 @@
-# Job Hunt HQ
+# Job Hunter
 
-Full-stack / product engineer openings across Berlin and Israel, with per-role fit
-notes, direct-target companies, outreach templates and a weekly playbook.
+A local-first, gamified job search workspace built on Job Hunt HQ. Curate roles with your existing AI subscription through MCP, shortlist the interesting ones, then work through focused application sessions.
 
-Originally a local HTML artifact with `localStorage`; now a Next.js app on Vercel
-backed by Neon Postgres, so status and notes persist across devices and agents can
-read and update the pipeline over an API.
+## Run locally
 
-## Stack
-
-- **Next.js 15** (App Router) on Vercel
-- **Neon Postgres** via `@neondatabase/serverless`
-- No ORM — SQL lives in `db/schema.sql` and `lib/`
-
-## Local development
+Requires Node.js 22.17+ and Docker Compose. No cloud database or model API key is required.
 
 ```bash
-npm install
-cp .env.example .env.local     # fill in DATABASE_URL and the three secrets
-npm run db:migrate             # apply db/schema.sql (safe to re-run)
-npm run db:seed                # first-time import; never overwrites status or notes
+npm ci
+npm run setup
+# Creates private .env.local with random credentials; never overwrites an existing file.
+docker compose --env-file .env.local up -d --wait
+npm run db:migrate
 npm run dev
 ```
 
-## Environment variables
+Open the URL printed by Next.js. Sign in with `APP_PASSWORD` from `.env.local`.
+If port 3000 is occupied, set `JOB_HUNTER_URL` in `.env.local` to the actual URL before using MCP.
+The database binds to loopback port 54329 and persists in a Docker volume.
+Stop it with `docker compose --env-file .env.local stop`. Back up the database before removing its volume.
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | Neon **pooled** connection string |
-| `AGENT_TOKEN` | Bearer token for API access (Claude, scripts, other agents) |
-| `APP_PASSWORD` | Password typed once at `/login` to open the web UI |
-| `SESSION_SECRET` | Signs the browser session cookie |
+New installations start empty. Add a role in the UI or connect your assistant.
+`npm run db:seed` is an **optional import of Ido's original personal dataset**, not generic demo data; it preserves status and notes but refreshes other seeded fields.
 
-## Access
+## The workflow
 
-The UI sits behind a password at `/login`, which sets a signed, HTTP-only cookie
-good for 90 days. The API accepts either that cookie or
-`Authorization: Bearer $AGENT_TOKEN`. `/api/openapi.json` is the one public route.
+- **Discover:** search and rank by fit or estimated application time. Shortlist or discard roles.
+- **Focus:** one bright application iframe in a dark workspace, with company facts, your fit, connections, and relevant prior answers. Use the external link when embedding or sign-in is blocked.
+- **Complete:** submit on the employer's site, then confirm and log the application. Earn 100 XP once per role; level up every 500 XP. Job Hunter never submits to an employer on your behalf.
+- **Skip:** two skips per session. Skipped and unfinished roles stay shortlisted. You can always end a session.
+- **Reuse:** record answers you actually submitted. They save with the application, question, company, and timestamp. Similarity uses lexical overlap, without embeddings or model calls. Review before reusing. Unsaved answer notes are lost on reload; the application queue and earned XP survive reloads.
 
-## API
+The original jobs, notes, filters, direct targets, outreach, and playbook remain available at `/tracker`. The original API remains compatible. Schema additions are idempotent and do not rewrite existing job data.
 
-Full reference: [AGENTS.md](./AGENTS.md), or `GET /api/openapi.json`.
+## Connect your assistant through MCP
 
+The app exposes a **local stdio MCP server**. Use a compatible assistant that supports local MCP servers (and your existing subscription). The assistant, its web/email connectors, and any scheduling run outside Job Hunter.
+
+In your assistant's MCP configuration, replacing both absolute paths:
+
+```json
+{
+  "mcpServers": {
+    "job-hunter": {
+      "command": "node",
+      "args": [
+        "--import", "/absolute/path/job-hunt/node_modules/tsx/dist/loader.mjs",
+        "/absolute/path/job-hunt/scripts/mcp.ts"
+      ]
+    }
+  }
+}
 ```
-GET    /api/jobs?fresh=1&city=Berlin&q=react
-POST   /api/jobs
-GET    /api/jobs/{slug}
-PATCH  /api/jobs/{slug}
-DELETE /api/jobs/{slug}
 
-GET|POST           /api/targets  /api/outreach  /api/playbook
-PATCH|DELETE       /api/targets/{id}  /api/outreach/{id}  /api/playbook/{id}
-GET|POST           /api/meta
+The script resolves `.env.local` relative to the checkout, so it also works when your assistant starts in a different directory. Ensure `node` is on its PATH or use its absolute path. `npm run mcp` starts the same server for manual use (stdio is a machine protocol, not an interactive prompt).
+
+Tools: `list_jobs`, `add_job`, `update_job`, `index_form`, `record_scan`.
+Prompt: `job_scan`, with `preferences` and optional `cadence` (`daily` / `weekly`).
+Open `/scan` to enter your interests and copy a personalized prompt into your existing automation. The complete prompt source is [lib/scan-prompt.ts](lib/scan-prompt.ts).
+
+The prompt requests verified company/role/posting/application URLs, location, employment, remote policy, tags, fit notes, company facts, real connections, and dated sources. Email status updates require a separately connected and authorized email reader. It preserves user notes/history and flags ambiguous matches. MCP has no employer submission, email sending, answer-library read, or XP-awarding tool.
+
+## Programmatic form indexing
+
+Forms are indexed on job insertion, application/posting URL changes, or explicit re-indexing. Stored results contain the question label, kind, required flag, options, open-question classification, estimate, source URL, timestamp, and coverage note.
+
+- HTML application forms: text, textareas, select fields, grouped radio/checkbox controls, uploads, and open questions; hidden/disabled controls are excluded.
+- Greenhouse: fetches the [public Job Board questions API](https://docs.greenhouse.io/job-board.html#retrieve-a-job), including direct and embedded Greenhouse URLs. Upload/paste alternatives count once.
+- Supported ATS iframe URLs can be followed once; each request and redirect uses public-address validation and pinned DNS. Downloads and request time are bounded.
+- Estimates: one minute overhead, ~15 seconds per short field, ~12–15 seconds per choice, one minute per file, and 2.5 minutes per open question. These are heuristics, not observed user timings.
+
+**Coverage limit:** static HTML and public Greenhouse questions do not reveal all JavaScript-only, conditional, consent, demographic, login, or multi-step controls. Results are labeled **partial**, or **unknown** when no controls are found; unknown jobs sort last. Full browser rendering, CAPTCHA bypass, and automatic form filling are not included. No LLM invents question counts or estimates.
+
+## Existing hosted installation
+
+Keep the existing `DATABASE_URL`, `AGENT_TOKEN`, `SESSION_SECRET`, and `APP_PASSWORD`; omit `DATABASE_DRIVER` (or use `neon`) for the existing Neon HTTP driver. Local Postgres uses `DATABASE_DRIVER=pg`. Review and apply `npm run db:migrate` against the intended database before deploying the updated app. Do not run local setup over production credentials.
+
+This MVP is **one personal account per installation**. Paid hosting, billing, multi-user isolation, remote MCP/OAuth, and background scrape workers are deferred. No hosted deployment or production migration is performed by this change. Licensing is intentionally unchanged.
+
+## API and verification
+
+The API accepts the existing signed session cookie or `Authorization: Bearer <AGENT_TOKEN>`. `/api/openapi.json` documents the routes. See [AGENTS.md](AGENTS.md) for existing automation guidance.
+
+New routes:
+
+- `GET /api/hunter`: shortlist, session, completion ledger, and saved answers.
+- `POST /api/hunter`: `type` = `select`, `remove`, `start`, `skip`, `complete`, `end`; `slug` for job actions; optional `answers: [{question, answer}]` when completing.
+- `POST /api/jobs/{slug}/index`: re-index the stored form URL.
+
+Session changes use optimistic concurrency; job application status and the completion ledger commit together. Duplicate completions do not duplicate XP or answers.
+
+```bash
+npm test
+npm run typecheck
+npm run build
+# With the app running against a fresh, disposable LOCAL database:
+npm run test:integration
 ```
 
-## Deployment
-
-Push to `main`; Vercel builds and deploys. Schema changes need
-`npm run db:migrate` against the production `DATABASE_URL` — it is not run
-automatically.
+The integration check creates temporary jobs and exercises authentication, job CRUD, concurrent completion, answer persistence, skips, server rendering, and a real MCP client handshake/tool/prompt call. It cleans up its fixtures; do not run it on your working job database.
