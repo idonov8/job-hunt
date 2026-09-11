@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (!body.company || !body.role) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || !body.company || !body.role) {
       return Response.json({ error: '"company" and "role" are required' }, { status: 400 });
     }
     const values = pickWritable(body);

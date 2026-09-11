@@ -31,7 +31,7 @@ export default function LoginPage() {
 
   return (
     <div className="gate">
-      <h1>Job Hunt HQ</h1>
+      <h1>Job Hunter</h1>
       <p className="sub">Enter the password to open the tracker.</p>
       <form onSubmit={submit}>
         <input

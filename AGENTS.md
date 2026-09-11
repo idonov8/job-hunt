@@ -1,4 +1,4 @@
-# Job Hunt HQ — guide for agents
+# Job Hunter — guide for agents
 
 Ido's job-hunt tracker. A Next.js app on Vercel with a Neon Postgres database.
 Everything the site shows is a row in the database, and every row is reachable
@@ -110,8 +110,7 @@ This is the recurring job. In order:
 3. Bump `last_seen` on any older listing you re-confirmed as still open.
 4. `POST /api/meta` with `{"scanned_on","sources","jobs_added","summary"}` — this
    is what the page footer reads.
-5. If the market read has changed, update the "What the market looked like this
-   week" playbook section via `PATCH /api/playbook/{id}`.
+5. Summarize new matches, status updates, and any ambiguous results for the user.
 
 Never delete a job that has a `status` set — Ido's history lives there. Set
 `status: "pass"` instead if the role has closed.
@@ -127,9 +126,9 @@ no filler adjectives, and never invent a detail about a company you didn't verif
 ## Changing the site itself
 
 ```
-app/page.tsx          Server component — auth gate, loads everything, renders <Hq/>
-app/hq.tsx            The whole UI: tabs, filters, stat row, job cards
-app/globals.css       Styling, carried over from the original artifact
+app/page.tsx          Auth gate, jobs, personal state, and latest scan
+app/hunter.tsx        Unified board, counters, job cards, and focus mode
+app/hunter.css        Light overview and dark application workspace
 app/api/**/route.ts   The REST API
 lib/jobs.ts           Job queries, writable-field whitelist, validation
 lib/collections.ts    Shared CRUD for targets / outreach / playbook
@@ -142,3 +141,26 @@ re-runnable), then add the field to the whitelist in `lib/jobs.ts` and to
 `/api/openapi.json`. Push to `main` and Vercel deploys it.
 
 Before pushing: `npm run typecheck && npm run build`.
+
+## Job Hunter MVP
+
+The default `/` route is the unified light Job Hunter board with dark application sessions.
+`/tracker` redirects to `/`; there is no separate HQ interface. Direct targets,
+outreach, and playbook tabs were removed; legacy API data is retained.
+See README for local Postgres setup and the HTTP MCP endpoint. Do not assume a
+production deployment or access a production database to validate code changes.
+
+New writable job fields: `application_url` (direct form), `company_summary`,
+`connection_note`. Form indexing runs programmatically on insert and URL changes.
+`form_index` is read-only; never guess or overwrite its question counts using an LLM.
+Re-index with `POST /api/jobs/{slug}/index`.
+
+`lib/hunter-model.ts` owns session transitions and lexical answer matching.
+`lib/hunter.ts` commits the session/XP ledger and application status atomically.
+`/api/hunter` is the authenticated personal state API. XP is a one-time completion
+ledger, not a counter derived from mutable job statuses. Email updates should use
+the existing job status API; never fabricate user-confirmed completions.
+
+`/scan` and the MCP `job_scan` prompt let the user personalize the daily/weekly
+scan. The assistant must verify facts and preserve notes, history, and user choices.
+Run `npm test` in addition to the existing typecheck/build before pushing.

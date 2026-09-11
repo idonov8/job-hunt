@@ -1,5 +1,5 @@
 import { loadEnvLocal } from './load-env.mjs';
-import { neon } from '@neondatabase/serverless';
+import { createSql } from './database.mjs';
 import { JOBS, TARGETS, OUTREACH, PLAY, SCAN } from '../db/seed-data.mjs';
 
 loadEnvLocal();
@@ -10,7 +10,7 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const sql = neon(connectionString);
+const sql = createSql();
 console.log(`-> ${new URL(connectionString).host}`);
 
 // Kept in step with lib/slug.ts — the two runtimes can't share a module.

@@ -90,3 +90,17 @@ begin
     );
   end loop;
 end $$;
+
+-- Job Hunter additions; additive migration preserves the original tracker.
+alter table jobs add column if not exists application_url text;
+alter table jobs add column if not exists company_summary text not null default '';
+alter table jobs add column if not exists connection_note text not null default '';
+alter table jobs add column if not exists form_index jsonb;
+
+-- ponytail: one personal account per installation; split by account before paid hosting.
+create table if not exists hunter_state (
+  id integer primary key check (id = 1),
+  version integer not null default 0,
+  data jsonb not null default '{"selected":[],"completed":[],"answers":[],"session":null}'::jsonb
+);
+insert into hunter_state(id) values (1) on conflict do nothing;

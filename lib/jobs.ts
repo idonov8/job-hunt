@@ -1,9 +1,15 @@
 import { sql } from '@/lib/db';
+import { webUrl, indexForm } from '@/lib/form-index';
+import type { FormIndex } from '@/lib/hunter-model';
 
 export const STATUSES = ['', 'applied', 'talking', 'offer', 'pass'] as const;
 export type Status = (typeof STATUSES)[number];
 
 export type Job = {
+  application_url: string | null;
+  company_summary: string;
+  connection_note: string;
+  form_index: FormIndex | null;
   slug: string;
   company: string;
   role: string;
@@ -26,7 +32,7 @@ export type Job = {
 
 const SELECT_COLUMNS = `
   slug, company, role, url, city, employment, remote, top_fit, impact, fresh,
-  tags, fit_note, status, my_notes, source,
+  tags, fit_note, status, my_notes, source, application_url, company_summary, connection_note, form_index,
   to_char(first_seen, 'YYYY-MM-DD') as first_seen,
   to_char(last_seen, 'YYYY-MM-DD') as last_seen,
   updated_at
@@ -36,7 +42,10 @@ const SELECT_COLUMNS = `
 const WRITABLE = {
   company: (v: unknown) => nonEmptyString(v, 'company'),
   role: (v: unknown) => nonEmptyString(v, 'role'),
-  url: (v: unknown) => nullableString(v),
+  url: validUrl,
+  application_url: validUrl,
+  company_summary: (v: unknown) => String(v ?? '').slice(0,10000),
+  connection_note: (v: unknown) => String(v ?? '').slice(0,10000),
   city: (v: unknown) => nullableString(v),
   employment: (v: unknown) => nullableString(v),
   remote: (v: unknown) => Boolean(v),
@@ -56,6 +65,10 @@ export type WritableField = keyof typeof WRITABLE;
 export const WRITABLE_FIELDS = Object.keys(WRITABLE) as WritableField[];
 
 export class ValidationError extends Error {}
+
+function validUrl(value: unknown) {
+  try { return webUrl(value); } catch { throw new ValidationError('URL must use http(s) without credentials'); }
+}
 
 function nonEmptyString(value: unknown, field: string): string {
   const text = String(value ?? '').trim();
@@ -84,6 +97,7 @@ function toStatus(value: unknown): Status {
 
 /** Picks the writable fields present in `body` and validates each one. */
 export function pickWritable(body: Record<string, unknown>): Partial<Record<WritableField, unknown>> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ValidationError('Body must be an object');
   const picked: Partial<Record<WritableField, unknown>> = {};
   for (const field of WRITABLE_FIELDS) {
     if (field in body) picked[field] = WRITABLE[field](body[field]);
@@ -150,7 +164,7 @@ export async function insertJob(
      returning ${SELECT_COLUMNS}`,
     [slug, ...fields.map((field) => values[field])],
   );
-  return rows[0] as Job;
+  return refreshForm(rows[0] as Job);
 }
 
 export async function updateJob(
@@ -165,7 +179,15 @@ export async function updateJob(
     `update jobs set ${assignments.join(', ')} where slug = $1 returning ${SELECT_COLUMNS}`,
     [slug, ...fields.map((field) => values[field])],
   );
-  return (rows[0] as Job) ?? null;
+  const job = (rows[0] as Job) ?? null;
+  return job && ('url' in values || 'application_url' in values) ? refreshForm(job) : job;
+}
+
+async function refreshForm(job: Job): Promise<Job> {
+  const url = job.application_url || job.url;
+  const index = url ? await indexForm(url) : null;
+  await sql.query('update jobs set form_index=$1::jsonb where slug=$2 and coalesce(application_url,url) is not distinct from $3', [JSON.stringify(index), job.slug, url]);
+  return (await getJob(job.slug))!;
 }
 
 export async function deleteJob(slug: string): Promise<boolean> {

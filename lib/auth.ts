@@ -75,12 +75,25 @@ function readCookie(request: Request, name: string): string | undefined {
 }
 
 export async function isAuthorized(request: Request): Promise<boolean> {
-  const header = request.headers.get('authorization');
-  if (header?.startsWith('Bearer ')) {
-    const token = process.env.AGENT_TOKEN;
-    if (token && safeEqual(header.slice(7).trim(), token)) return true;
+  if (isAgentAuthorized(request)) return true;
+  const origin = request.headers.get('origin');
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && origin) {
+    // Next may normalize request.url to localhost; browser Host retains the public host.
+    try {
+      if (new URL(origin).host !== request.headers.get('host')) return false;
+    } catch { return false; }
   }
   return isValidSession(readCookie(request, SESSION_COOKIE));
+}
+
+export function isAgentAuthorized(request: Request): boolean {
+  const header = request.headers.get('authorization');
+  const token = process.env.AGENT_TOKEN;
+  return Boolean(
+    token &&
+      header?.startsWith('Bearer ') &&
+      safeEqual(header.slice(7).trim(), token),
+  );
 }
 
 /** Returns a 401 Response when the caller is not authorized, otherwise null. */

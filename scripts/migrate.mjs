@@ -1,6 +1,6 @@
 import { loadEnvLocal } from './load-env.mjs';
 import { readFile } from 'node:fs/promises';
-import { neon } from '@neondatabase/serverless';
+import { createSql } from './database.mjs';
 import { splitStatements } from './sql-split.mjs';
 
 loadEnvLocal();
@@ -11,7 +11,7 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const sql = neon(connectionString);
+const sql = createSql();
 console.log(`-> ${new URL(connectionString).host}`);
 const schema = await readFile(new URL('../db/schema.sql', import.meta.url), 'utf8');
 const statements = splitStatements(schema);

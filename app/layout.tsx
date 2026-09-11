@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './hunter.css';
 
 export const metadata: Metadata = {
-  title: 'Ido — Job Hunt HQ',
-  description: 'Full-stack / product engineer openings across Berlin and Israel, with fit notes and a weekly playbook.',
+  title: 'Job Hunter',
+  description: 'Find your next role, one focused application at a time.',
   robots: { index: false, follow: false },
 };
 
