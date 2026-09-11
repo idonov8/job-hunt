@@ -1,6 +1,6 @@
 # Job Hunter — guide for agents
 
-Ido's job-hunt tracker. A Next.js app on Vercel with a Neon Postgres database.
+Ido's job-hunt tracker. A Ruby on Rails app with a PostgreSQL database.
 Everything the site shows is a row in the database, and every row is reachable
 over a plain JSON API — so you can update the tracker without touching the code.
 
@@ -126,21 +126,20 @@ no filler adjectives, and never invent a detail about a company you didn't verif
 ## Changing the site itself
 
 ```
-app/page.tsx          Auth gate, jobs, personal state, and latest scan
-app/hunter.tsx        Unified board, counters, job cards, and focus mode
-app/hunter.css        Light overview and dark application workspace
-app/api/**/route.ts   The REST API
-lib/jobs.ts           Job queries, writable-field whitelist, validation
-lib/collections.ts    Shared CRUD for targets / outreach / playbook
-lib/auth.ts           Bearer token + signed session cookie
-db/schema.sql         Source of truth for the schema
+app/views/jobs/index.html.erb        Unified server-rendered board and focus session
+app/assets/stylesheets/application.css  Complete visual layer
+app/assets/javascripts/application.js   Minimal tabs, filtering, queue, and copy actions
+app/controllers/api/**              The REST API
+app/models/job.rb                    Job queries, writable fields, validation
+app/services/hunter_transition.rb    Session transitions
+app/services/form_indexer.rb         Static HTML form indexing
+db/schema.sql                        Human-readable source of truth
+db/structure.sql                     Rails-loadable schema copy
 ```
 
-Adding a column: edit `db/schema.sql`, run `npm run db:migrate` (it is
-re-runnable), then add the field to the whitelist in `lib/jobs.ts` and to
-`/api/openapi.json`. Push to `main` and Vercel deploys it.
+Adding a column: edit both SQL schema files, apply it to the intended database, then add the field to `Job::WRITABLE` and `/api/openapi.json`. Never run migrations against production merely to validate a code change.
 
-Before pushing: `npm run typecheck && npm run build`.
+Before pushing: `bin/rails test && bin/rails zeitwerk:check && bin/rubocop && bin/brakeman --no-pager`.
 
 ## Job Hunter MVP
 
@@ -155,12 +154,12 @@ New writable job fields: `application_url` (direct form), `company_summary`,
 `form_index` is read-only; never guess or overwrite its question counts using an LLM.
 Re-index with `POST /api/jobs/{slug}/index`.
 
-`lib/hunter-model.ts` owns session transitions and lexical answer matching.
-`lib/hunter.ts` commits the session/XP ledger and application status atomically.
+`app/services/hunter_transition.rb` owns session transitions.
+`Api::HunterController` commits the session/XP ledger and application status atomically.
 `/api/hunter` is the authenticated personal state API. XP is a one-time completion
 ledger, not a counter derived from mutable job statuses. Email updates should use
 the existing job status API; never fabricate user-confirmed completions.
 
 `/scan` and the MCP `job_scan` prompt let the user personalize the daily/weekly
 scan. The assistant must verify facts and preserve notes, history, and user choices.
-Run `npm test` in addition to the existing typecheck/build before pushing.
+Run the Rails test, autoload, style, and security checks before pushing.
