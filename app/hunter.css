@@ -710,6 +710,28 @@
   padding: 22px;
   margin: 22px 0;
 }
+.scan-page .setup-card {
+  margin-top: 22px;
+  text-align: center;
+}
+.setup-card > p {
+  max-width: 610px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.scan-page .setup-copy {
+  width: 100%;
+  padding: 16px 24px;
+  margin-top: 18px;
+  font-size: 17px;
+}
+.scan-page .setup-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+.setup-card details {
+  text-align: left;
+}
 .setup-step h2 {
   font-size: 20px;
   margin-top: 0;

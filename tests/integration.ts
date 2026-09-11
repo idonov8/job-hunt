@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { createSql } from '../scripts/database.mjs';
 import { loadEnvLocal } from '../scripts/load-env.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 loadEnvLocal();
 const base = process.env.JOB_HUNTER_URL!;
 async function api(
@@ -131,9 +130,9 @@ async function main() {
     assert.equal(legacy.status, 307);
     assert.equal(legacy.headers.get('location'), '/');
     const setup = await (await fetch(base + '/scan')).text();
-    assert.ok(setup.includes('Copy scan prompt'));
-    assert.ok(setup.includes('https://learn.chatgpt.com/docs/automations'));
-    assert.ok(setup.includes('schedule-recurring-tasks-in-claude-cowork'));
+    assert.ok(setup.includes('Copy setup prompt'));
+    assert.ok(setup.includes('separate inbox and job-search routines'));
+    assert.equal((await fetch(base + '/mcp')).status, 401);
     await api('/api/hunter', { type: 'start' });
     assert.ok(
       (await (await fetch(base, { headers: { cookie } })).text()).includes(
@@ -142,16 +141,26 @@ async function main() {
     );
     await api('/api/hunter', { type: 'end' });
     const client = new Client({ name: 'job-hunter-check', version: '1.0' });
-    const config = JSON.parse(
-      execFileSync(process.execPath, ['scripts/mcp-config.mjs'], {
-        encoding: 'utf8',
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL('/mcp', base), {
+        requestInit: {
+          headers: {
+            authorization: `Bearer ${process.env.AGENT_TOKEN}`,
+          },
+        },
       }),
-    ).mcpServers['job-hunter'];
-    await client.connect(new StdioClientTransport({ ...config, cwd: '/tmp', env: process.env.JOB_HUNTER_ENV_FILE ? {JOB_HUNTER_ENV_FILE: process.env.JOB_HUNTER_ENV_FILE} : undefined }));
+    );
     try {
       assert.deepEqual(
         (await client.listTools()).tools.map((t) => t.name).sort(),
-        ['add_job', 'index_form', 'list_jobs', 'record_scan', 'update_job'],
+        [
+          'add_job',
+          'get_job_fields',
+          'index_form',
+          'list_jobs',
+          'record_scan',
+          'update_job',
+        ],
       );
       assert.equal(
         (await client.callTool({ name: 'complete_application', arguments: {} }))
@@ -166,6 +175,17 @@ async function main() {
       const listed = JSON.parse((result.content as {text:string}[])[0].text);
       assert.equal(listed.jobs.length,3);
       assert.ok(listed.jobs.every((j:{slug:string}) => slugs.includes(j.slug)));
+      const fields = await client.callTool({
+        name: 'get_job_fields',
+        arguments: {},
+      });
+      assert.ok(!fields.isError);
+      const fieldSchema = JSON.parse(
+        (fields.content as { text: string }[])[0].text,
+      );
+      assert.deepEqual(fieldSchema.required, ['company', 'role']);
+      assert.ok(fieldSchema.fields.company);
+      assert.ok(fieldSchema.fields.application_url);
       assert.ok(
         (
           await client.getPrompt({

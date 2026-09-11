@@ -147,7 +147,7 @@ Before pushing: `npm run typecheck && npm run build`.
 The default `/` route is the unified light Job Hunter board with dark application sessions.
 `/tracker` redirects to `/`; there is no separate HQ interface. Direct targets,
 outreach, and playbook tabs were removed; legacy API data is retained.
-See README for local Postgres setup and the stdio MCP bridge. Do not assume a
+See README for local Postgres setup and the HTTP MCP endpoint. Do not assume a
 production deployment or access a production database to validate code changes.
 
 New writable job fields: `application_url` (direct form), `company_summary`,

@@ -16,7 +16,6 @@ npm run dev
 ```
 
 Open the URL printed by Next.js. Sign in with `APP_PASSWORD` from `.env.local`.
-If port 3000 is occupied, set `JOB_HUNTER_URL` in `.env.local` to the actual URL before using MCP.
 The database binds to loopback port 54329 and persists in a Docker volume.
 Stop it with `docker compose --env-file .env.local stop`. Back up the database before removing its volume.
 
@@ -35,29 +34,11 @@ There is one Job Hunter interface. `/tracker` redirects to `/`. Tabs are Opening
 
 ## Connect your assistant through MCP
 
-The app exposes a **local stdio MCP server**. Use a compatible assistant that supports local MCP servers (and your existing subscription). The assistant, its web/email connectors, and any scheduling run outside Job Hunter.
+The running app exposes a Streamable HTTP MCP server at `/mcp`. Connect a compatible assistant to `http://127.0.0.1:3000/mcp` locally, or `https://your-domain.example/mcp` on Vercel, and send `AGENT_TOKEN` as the Bearer token. There is no separate MCP process or npm configuration step. The assistant, its web/email connectors, and any scheduling run outside Job Hunter.
 
-Run `npm run mcp:config` to print ready-to-paste local MCP settings with the correct Node executable and absolute paths. No token is printed. Add the result to your agent's local MCP configuration. Its shape is:
-
-```json
-{
-  "mcpServers": {
-    "job-hunter": {
-      "command": "node",
-      "args": [
-        "--import", "/absolute/path/job-hunt/node_modules/tsx/dist/loader.mjs",
-        "/absolute/path/job-hunt/scripts/mcp.ts"
-      ]
-    }
-  }
-}
-```
-
-The script resolves `.env.local` relative to the checkout, so it also works when your assistant starts in a different directory. Ensure `node` is on its PATH or use its absolute path. `npm run mcp` starts the same server for manual use (stdio is a machine protocol, not an interactive prompt).
-
-Tools: `list_jobs`, `add_job`, `update_job`, `index_form`, `record_scan`.
+Tools: `get_job_fields`, `list_jobs`, `add_job`, `update_job`, `index_form`, `record_scan`. Every scan starts with `get_job_fields`, which reads the current API schema instead of baking tracker fields into the scan prompt.
 Prompt: `job_scan`, with `preferences` and optional `cadence` (`daily` / `weekly`).
-Open `/scan` for a gentle connection walkthrough, copyable connection instructions, and a shorter personalized scan prompt. Run it once before scheduling it. The page links to [ChatGPT scheduled tasks](https://learn.chatgpt.com/docs/automations) and [Claude recurring tasks](https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork). Local MCP scans require the app and a compatible desktop agent to remain running; a cloud-only routine cannot launch this stdio server directly. The complete prompt source is [lib/scan-prompt.ts](lib/scan-prompt.ts).
+Open `/scan` for one copyable setup prompt. Paste it into a compatible agent; it includes the current `/mcp` URL, guides the connection, fills a profile from memory or a CV, asks for missing preferences, and creates separate daily inbox and personalized job-scan routines. Local routines require the app and desktop agent to remain running; a Vercel deployment remains available without a local process. The complete prompt source is [lib/scan-prompt.ts](lib/scan-prompt.ts).
 
 The prompt requests verified company/role/posting/application URLs, location, employment, remote policy, tags, fit notes, company facts, real connections, and dated sources. Email status updates require a separately connected and authorized email reader. It preserves user notes/history and flags ambiguous matches. MCP has no employer submission, email sending, answer-library read, or XP-awarding tool.
 
@@ -84,7 +65,7 @@ npm run db:migrate
 npm run build
 ```
 
-The script reads `DATABASE_URL` from that checkout's `.env.local` **in preference to shell variables**. Confirm the file targets your existing Neon database and omit `DATABASE_DRIVER=pg` there (or set it to `neon`). The preview checkout may instead point to a separate local Docker database. Migrating the preview does not migrate Neon. To keep separate settings without changing `.env.local`, use `JOB_HUNTER_ENV_FILE=/absolute/path/neon.env npm run db:migrate`; that explicit file takes precedence. The same override works for the MCP process.
+The script reads `DATABASE_URL` from that checkout's `.env.local` **in preference to shell variables**. Confirm the file targets your existing Neon database and omit `DATABASE_DRIVER=pg` there (or set it to `neon`). The preview checkout may instead point to a separate local Docker database. Migrating the preview does not migrate Neon. To keep separate settings without changing `.env.local`, use `JOB_HUNTER_ENV_FILE=/absolute/path/neon.env npm run db:migrate`; that explicit file takes precedence.
 
 The additions are:
 
@@ -104,7 +85,7 @@ Apply the migration before deploying the updated app. Keep your existing `APP_PA
 
 Keep the existing `DATABASE_URL`, `AGENT_TOKEN`, `SESSION_SECRET`, and `APP_PASSWORD`; omit `DATABASE_DRIVER` (or use `neon`) for the existing Neon HTTP driver. Local Postgres uses `DATABASE_DRIVER=pg`. Review and apply `npm run db:migrate` against the intended database before deploying the updated app. Do not run local setup over production credentials.
 
-This MVP is **one personal account per installation**. Paid hosting, billing, multi-user isolation, remote MCP/OAuth, and background scrape workers are deferred. No hosted deployment or production migration is performed by this change. Licensing is intentionally unchanged.
+This MVP is **one personal account per installation**. Paid hosting, billing, multi-user isolation, MCP OAuth, and background scrape workers are deferred. No hosted deployment or production migration is performed by this change. Licensing is intentionally unchanged.
 
 ## API and verification
 

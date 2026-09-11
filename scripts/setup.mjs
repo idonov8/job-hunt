@@ -5,7 +5,7 @@ const password = secret();
 try {
   writeFileSync(
     '.env.local',
-    `DATABASE_DRIVER=pg\nLOCAL_DB_PASSWORD=${password}\nDATABASE_URL=postgresql://jobhunter:${password}@127.0.0.1:54329/jobhunter\nAGENT_TOKEN=${secret()}\nSESSION_SECRET=${secret()}\nAPP_PASSWORD=${secret()}\nJOB_HUNTER_URL=http://127.0.0.1:3000\n`,
+    `DATABASE_DRIVER=pg\nLOCAL_DB_PASSWORD=${password}\nDATABASE_URL=postgresql://jobhunter:${password}@127.0.0.1:54329/jobhunter\nAGENT_TOKEN=${secret()}\nSESSION_SECRET=${secret()}\nAPP_PASSWORD=${secret()}\n`,
     { flag: 'wx', mode: 0o600 },
   );
   console.log(
