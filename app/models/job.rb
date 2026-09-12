@@ -6,7 +6,7 @@ class Job < ApplicationRecord
   validates :slug, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
   before_validation :assign_slug, on: :create
-  scope :ordered, -> { order(fresh: :desc, top_fit: :desc, company: :asc, role: :asc) }
+  scope :ordered, -> { order(Arel.sql("CASE WHEN jsonb_typeof(form_index->'minutes') = 'number' THEN (form_index->>'minutes')::integer END ASC NULLS LAST, fresh DESC, top_fit DESC, company ASC, role ASC")) }
 
   def self.filtered(params)
     jobs = ordered
