@@ -40,8 +40,6 @@ class HunterTransition
   end
   private
     def advance(type, slug)
-      return if %w[complete pass].include?(type) && @state["completed"].any? { |item| item["slug"] == slug }
-
       session = @state["session"]
       raise ArgumentError, "This application is no longer current; reload Job Hunt" unless session && !session["ended"] && session["queue"].first == slug
 
@@ -50,9 +48,10 @@ class HunterTransition
         session["skipped"] << slug
       else
         job = @jobs.fetch(slug)
-        @awarded_xp = awarded_for(type, session, job)
+        already_awarded = @state["completed"].any? { |item| item["slug"] == slug }
+        @awarded_xp = awarded_for(type, session, job) unless already_awarded
         session["done"] << slug
-        @state["completed"] << { "slug" => slug, "at" => timestamp, "action" => type, "xp" => @awarded_xp }
+        @state["completed"] << { "slug" => slug, "at" => timestamp, "action" => type, "xp" => @awarded_xp } unless already_awarded
         @state["selected"].delete(slug)
         save_answers(slug, job) if type == "complete"
       end
