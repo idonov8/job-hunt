@@ -1,0 +1,52 @@
+<header class="topbar"><div><strong>Go Hunt</strong></div><nav><%= button_to "Sign out", logout_path, method: :delete %></nav></header>
+<% if @hunter["session"] && !@hunter["session"]["ended"] && (current = Job.find_by(slug: @hunter["session"]["queue"].first)) %>
+  <% application_url = current.application_url.presence || current.url.presence %>
+  <% linkedin_url = application_url&.match?(%r{\Ahttps?://([^/]*\.)?linkedin\.com(?:/|\z)}i) %>
+  <% form_index = current.form_index.presence || {} %>
+  <% fields = Array(form_index["fields"]) %>
+  <% open_fields = fields.select { |field| field["open"] } %>
+  <% forecast_minutes = form_index["minutes"].presence || 5 %>
+  <% saved_answers = Array(@hunter["answers"]).reverse %>
+  <% total_xp = (defined?(@xp) && @xp).presence || Array(@hunter["completed"]).sum { |event| event["xp"].presence || 100 } %>
+  <% level = (defined?(@level) && @level).presence || total_xp / 500 + 1 %>
+  <% level_progress = total_xp % 500 / 5 %>
+  <section class="focus" data-slug="<%= current.slug %>" data-started-at="<%= @hunter["session"]["current_started_at"] %>" data-forecast-minutes="<%= forecast_minutes %>" data-linkedin-url="<%= application_url if linkedin_url %>">
+    <div class="focus-bar"><div><p class="eyebrow">Job Hunt</p><h1><%= current.role %> · <%= current.company %></h1></div><button data-hunter-action="end">End Job Hunt</button></div>
+    <div class="hunt-scoreboard">
+      <div class="xp-summary"><strong data-xp-total><%= total_xp %> XP</strong><span data-xp-level>Level <%= level %></span></div>
+      <div class="xp-track" role="progressbar" aria-label="XP progress" aria-valuemin="0" aria-valuemax="500" aria-valuenow="<%= total_xp % 500 %>"><i data-xp-fill style="width:<%= level_progress %>%"></i></div>
+      <div class="hunt-timer"><span>Time in hunt</span><strong data-elapsed>0:00</strong><small>Forecast: <%= forecast_minutes %> min</small></div>
+    </div>
+    <div class="focus-grid"><aside>
+      <h2>Why this role</h2><p><%= current.fit_note %></p><h2>Company</h2><p><%= current.company_summary.presence || "No company summary yet." %></p><h2>Connection</h2><p><%= current.connection_note.presence || "No connection note yet." %></p>
+      <h2>Application effort</h2>
+      <% if fields.any? %><p><strong><%= forecast_minutes %> min</strong> forecast · <%= fields.length %> fields · <%= open_fields.length %> open question<%= "s" unless open_fields.length == 1 %></p><p class="field-kinds"><%= fields.group_by { |field| field["kind"].to_s.humanize }.map { |kind, values| "#{values.length} #{kind.downcase}" }.join(" · ") %></p><% else %><p>About <strong><%= forecast_minutes %> min</strong>. The form could not be fully indexed yet.</p><% end %>
+      <div class="answer-editor"><h2>Answers for this application</h2>
+        <% open_fields.each do |field| %>
+          <% question = field["label"].to_s %><% prior = saved_answers.find { |answer| prior_question = answer["question"].to_s.downcase; prior_question.present? && (prior_question.include?(question.downcase) || question.downcase.include?(prior_question)) } if question.present? %>
+          <div class="answer-row" data-answer-row><label><%= question %><textarea data-answer-question="<%= question %>" placeholder="What did you submit?"></textarea></label><% if prior %><p class="reusable-answer">Previously: <%= prior["answer"] %></p><% end %></div>
+        <% end %>
+        <% if open_fields.empty? && saved_answers.any? %><p class="reusable-answer">Recent reusable answer: <%= saved_answers.first["answer"] %></p><% end %>
+        <div data-manual-answers></div><button class="add-answer" type="button" data-add-answer>Add question + answer</button>
+      </div>
+    </aside><div class="frame">
+      <% if application_url && !linkedin_url %><iframe src="<%= application_url %>" title="Application for <%= current.role %>"></iframe><a href="<%= application_url %>" target="_blank" rel="noopener">Open application externally ↗</a><% elsif linkedin_url %><div class="external-frame"><h2>LinkedIn opens in a new tab</h2><p>LinkedIn blocks embedded application pages, so this application was opened separately.</p><a href="<%= application_url %>" target="_blank" rel="noopener">Open LinkedIn application ↗</a></div><% else %><p>No application URL is saved for this role.</p><% end %>
+    </div></div>
+    <template id="manual-answer-template"><div class="answer-row" data-answer-row><label>Question<input data-manual-question placeholder="Question"></label><label>Answer<textarea data-manual-answer placeholder="Answer you submitted"></textarea></label></div></template>
+    <div class="focus-actions"><span><%= @hunter["session"]["skipped"].length %> of 2 skips used</span><button data-hunter-action="skip">Skip for now</button><button class="pass" data-hunter-action="pass">Pass</button><button class="complete" data-hunter-action="complete">I submitted</button></div>
+  </section>
+<% end %>
+<% locations = @jobs.map(&:city).compact_blank.uniq.sort %>
+<% queued_jobs = @jobs.select { |job| @hunter["selected"].include?(job.slug) } %>
+<% history_jobs = @jobs.select { |job| job.status.present? } %>
+<main class="shell" data-controller="hunter">
+  <section class="hero"><div><h1>Go Hunt</h1><a class="scan-link" href="/scan">Set up automated job scan with your agent</a></div></section>
+  <div class="dashboard-grid"><div class="dashboard-main">
+    <div class="toolbar"><div class="tabs"><button class="active" data-tab="openings">Openings</button><button data-tab="queue">Application Queue</button><button data-tab="history">Application History</button><button data-tab="answers">Answers</button></div><input id="search" type="search" placeholder="Search roles, companies, tags…"></div>
+    <section id="openings" class="panel"><div class="filters"><button data-filter="all" class="active">All</button><button data-filter="fresh">New</button><button data-filter="top">Top fit</button><button data-filter="remote">Remote</button><% locations.each do |location| %><button data-location="<%= location %>"><%= location %></button><% end %></div><div class="jobs"><%= render partial: "job_card", collection: @jobs, as: :job, locals: { hunter: @hunter } %></div></section>
+    <section id="queue" class="panel hidden"><% if queued_jobs.any? %><div class="jobs compact-jobs"><%= render partial: "job_card", collection: queued_jobs, as: :job, locals: { hunter: @hunter } %></div><% else %><div class="empty"><h2>Application Queue</h2><p>Choose roles in Openings to add them here.</p></div><% end %></section>
+    <section id="history" class="panel hidden"><% if history_jobs.any? %><div class="jobs compact-jobs"><%= render partial: "job_card", collection: history_jobs, as: :job, locals: { hunter: @hunter } %></div><% else %><div class="empty"><h2>Application history</h2><p>Update a role's communication status to build your history.</p></div><% end %></section>
+    <section id="answers" class="panel hidden"><div class="empty"><h2>Saved answers</h2><p><%= @hunter["answers"].empty? ? "Answers you record after applying are saved for reuse." : "#{@hunter['answers'].length} answers ready to reuse." %></p></div></section>
+  </div><aside class="dashboard-rail"><button class="hunter-start" data-start-session>Start Job Hunt</button><section class="xp-card"><p class="eyebrow">Your progress</p><strong><%= @xp %> XP</strong><span>Level <%= @level %></span><div class="xp-meter" aria-label="<%= @xp %> XP"><i style="width:<%= @xp % 500 / 5 %>%"></i></div><small><%= 500 - (@xp % 500) %> XP to level <%= @level + 1 %></small></section><section class="stats rail-stats"><article><b><%= @jobs.count %></b><span>Openings</span></article><article><b><%= @jobs.count { |job| job.status == "applied" } %></b><span>Applied</span></article><article><b><%= @jobs.count { |job| job.status == "talking" } %></b><span>In conversation</span></article><article><b><%= @jobs.count { |job| job.status == "offer" } %></b><span>Offers</span></article><article><b><%= @jobs.count { |job| job.status == "pass" } %></b><span>Passed</span></article><article><b><%= @hunter["selected"].length %></b><span>In queue</span></article></section></aside></div>
+  <footer><%= @scan ? "Last scan #{@scan.scanned_on.strftime('%d %b %Y')} · #{@scan.sources}" : "No scans recorded yet" %></footer>
+</main>

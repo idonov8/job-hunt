@@ -2,17 +2,15 @@ services:
   db:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: jobhunter
-      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:?Run npm run setup first}
-      POSTGRES_DB: jobhunter
-    ports:
-      - "127.0.0.1:54329:5432"
-    volumes:
-      - jobhunter-data:/var/lib/postgresql/data
+      POSTGRES_USER: job_hunter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-job_hunter}
+      POSTGRES_DB: job_hunter_development
+    ports: ["127.0.0.1:54329:5432"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jobhunter"]
+      test: ["CMD-SHELL", "pg_isready -U job_hunter"]
       interval: 2s
       timeout: 3s
       retries: 20
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
 volumes:
-  jobhunter-data:
+  postgres_data:

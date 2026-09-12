@@ -1,0 +1,7 @@
+inherit_gem:
+  rubocop-rails-omakase: rubocop.yml
+AllCops:
+  NewCops: enable
+  Exclude:
+    - db/seed-data.mjs
+    - vendor/**/*
