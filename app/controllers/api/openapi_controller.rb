@@ -9,7 +9,7 @@ class Api::OpenapiController < ApplicationController
         "/api/jobs/{slug}" => { get: { summary: "Get a job" }, patch: { summary: "Update writable job fields" }, delete: { summary: "Delete a job" } },
         "/api/jobs/{slug}/index" => { post: { summary: "Re-index the application form" } },
         "/api/meta" => { get: { summary: "Counters and latest scan" }, post: { summary: "Record a scan" } },
-        "/api/hunter" => { get: { summary: "Get personal workflow state" }, post: { summary: "Transition the workflow" } }
+        "/api/hunter" => { get: { summary: "Get personal Job Hunt state" }, post: { summary: "Transition Job Hunt" } }
       },
       "x-writable-job-fields": Job::WRITABLE
     }
