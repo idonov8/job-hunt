@@ -1,6 +1,6 @@
 require "test_helper"
 class HunterTransitionTest < ActiveSupport::TestCase
-  JobStub = Struct.new(:company, :form_index)
+  JobStub = Struct.new(:company, :form_index, :status)
   def state
     { "selected" => [ "one" ], "completed" => [], "answers" => [], "session" => nil }
   end
@@ -60,5 +60,20 @@ class HunterTransitionTest < ActiveSupport::TestCase
     current = HunterTransition.new(current, { type: "skip", slug: "a" }, {}).call
     current = HunterTransition.new(current, { type: "skip", slug: "b" }, {}).call
     assert_raises(ArgumentError) { HunterTransition.new(current, { type: "skip", slug: "c" }, {}).call }
+  end
+
+  test "only queues jobs that are not started" do
+    job = JobStub.new("Acme", nil, "applied")
+    assert_raises(ArgumentError) { HunterTransition.new(state, { type: "select", slug: "one" }, { "one" => job }).call }
+  end
+
+  test "removing the current job advances an active hunt" do
+    now = Time.utc(2026, 9, 12, 12)
+    active = state.merge("selected" => %w[one two], "session" => { "queue" => %w[one two], "skipped" => [], "done" => [], "ended" => false })
+    removed = HunterTransition.new(active, { type: "remove", slug: "one" }, {}, now: now).call
+
+    assert_equal [ "two" ], removed["selected"]
+    assert_equal [ "two" ], removed.dig("session", "queue")
+    assert_equal now.iso8601, removed.dig("session", "current_started_at")
   end
 end

@@ -18,8 +18,17 @@ class Api::JobsController < Api::BaseController
     render json: { job: job.reload.api_json }, status: :created
   end
   def update
-    reindex = (json_body.keys & %w[url application_url]).any?
-    @job.update!(writable_params)
+    attrs = writable_params
+    reindex = (attrs.keys & %w[url application_url]).any?
+    if attrs["status"].present?
+      row = HunterState.current
+      row.with_lock do
+        @job.update!(attrs)
+        remove_from_hunt(row)
+      end
+    else
+      @job.update!(attrs)
+    end
     FormIndexer.new(@job).call if reindex
     render json: { job: @job.reload.api_json }
   end
@@ -40,6 +49,10 @@ class Api::JobsController < Api::BaseController
     end
     def writable_params
       json_body.slice(*Job::WRITABLE)
+    end
+    def remove_from_hunt(row)
+      queued = Array(row.data["selected"]).include?(@job.slug) || Array(row.data.dig("session", "queue")).include?(@job.slug)
+      row.update!(data: HunterTransition.new(row.data, { type: "remove", slug: @job.slug }, {}).call, version: row.version + 1) if queued
     end
     def invalid(error)
       render json: { error: "invalid", message: error.record.errors.full_messages.join(", ") }, status: :bad_request

@@ -22,6 +22,17 @@ class Api::HunterControllerTest < ActionDispatch::IntegrationTest
     assert_equal "pass", body["state"]["completed"].first["action"]
   end
 
+  test "updating a job status removes it from the queue" do
+    request_hunt(type: "select", slug: @job.slug)
+    request_hunt(type: "start")
+
+    patch api_job_path(@job.slug), params: { status: "talking" }.to_json, headers: { "Authorization" => "Bearer test-token", "CONTENT_TYPE" => "application/json" }
+
+    assert_response :success
+    assert_empty HunterState.current.data["selected"]
+    assert HunterState.current.data.dig("session", "ended")
+  end
+
   private
 
     def request_hunt(payload)

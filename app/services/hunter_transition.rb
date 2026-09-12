@@ -26,8 +26,9 @@ class HunterTransition
     case type
     when "select"
       raise ArgumentError, "Choose a job" if slug.blank?
+      raise ArgumentError, "Only jobs that are not started can be queued" if @jobs.fetch(slug).status.present?
       @state["selected"] << slug unless @state["selected"].include?(slug)
-    when "remove" then @state["selected"].delete(slug)
+    when "remove" then remove(slug)
     when "start"
       raise ArgumentError, "Resume or end the current Job Hunt first" if @state["session"] && !@state["session"]["ended"]
       raise ArgumentError, "Select at least one job" if @state["selected"].empty?
@@ -73,6 +74,15 @@ class HunterTransition
     def forecast_minutes(job)
       minutes = job.form_index.to_h["minutes"].to_f
       minutes.positive? ? minutes : DEFAULT_FORECAST_MINUTES
+    end
+
+    def remove(slug)
+      @state["selected"].delete(slug)
+      session = @state["session"]
+      return unless session && !session["ended"] && session["queue"].delete(slug)
+
+      session["ended"] = session["queue"].empty?
+      session["current_started_at"] = session["ended"] ? nil : timestamp
     end
 
     def save_answers(slug, job)
